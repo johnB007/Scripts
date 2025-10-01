@@ -1,0 +1,204 @@
+Got it all working and no longer the need for app registration
+
+ 
+
+ 
+
+<#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                               
+//  Disclaimer:                                                                  
+//  The sample scripts are not supported under any Microsoft standard support    
+//  program or service. The sample scripts are provided AS IS without warranty   
+//  of any kind. Microsoft further disclaims all implied warranties including,   
+//  without limitation, any implied warranties of merchantability or of fitness  
+//  for a particular purpose. The entire risk arising out of the use or          
+//  performance of the sample scripts and documentation remains with you. In no  
+//  event shall Microsoft, its authors, or anyone else involved in the creation, 
+//  production, or delivery of the scripts be liable for any damages whatsoever  
+//  (including, without limitation, damages for loss of business profits,        
+//  business interruption, loss of business information, or other pecuniary      
+//  loss) arising out of the use of or inability to use the sample scripts or    
+//  documentation, even if Microsoft has been advised of the  possibility of     
+//  such damages.                                                                
+//                                                                               
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+ 
+
+.PROGRAM      - InventoryExport-MgGraph.ps1
+.AUTHOR       - Paul Bergson
+.DATE WRITTEN - August 3rd, 2023
+
+ 
+
+.SYNOPSIS
+This script retrieves data from Defender for Endpoint using the MDE API and exports it to a CSV file. The script makes multiple calls
+to the API, each time retrieving a different set of rows, and combines the results to get the complete data set.
+
+ 
+
+.Access
+This requires that a Web Application created within AAD with permissions to read "Advanced Hunting" data is granted "ThreatHunting.Read.All"
+	This is where $AppId and $AppSecret values will come from
+
+ 
+
+.DESCRIPTION
+1. Acquires an access token using client credentials flow to authenticate the API requests.
+2. Constructs the API query to retrieve DeviceFileEvents for FileCreated actions with specific file names (e.g., Microsoft Office applications).
+3. Sends multiple POST requests to the API endpoint with the constructed query and the acquired access token, each time retrieving a different set of rows.
+4. Combines the results from all the API calls to get the complete data set.
+5. Exports the results to a CSV file.
+
+ 
+
+.NOTES
+- This script requires proper permissions and configuration of the Azure AD application to access Defender for Endpoint API.
+- Make sure to replace the placeholder values "YOUR_TENANT_ID," "YOUR_CLIENT_ID," and "YOUR_CLIENT_SECRET" with your actual values.
+
+ 
+
+ 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// #>
+
+ 
+
+ 
+
+#####################################################################################
+##                                                                                 ##
+## This will build the full resultant set to pass back to the array                ##
+## Utilizing this process won't require a rebuild of the array for every new page  ##
+##                                                                                 ##
+#####################################################################################
+Function Get-KQL-Results
+{
+	# Retrieve data in batches of 100,000 rows at a time, up to a maximum of 1,000,000 rows
+	while ($PageNumber -lt $maxRows) {
+
+		# Starting at Page 1, walk through all results at 100,000 at a time
+		$PageNumber++
+
+		#Build the query to interogate the Advanced Hunting API 
+		$query = @{
+			Query = $KQLQuery + ' | extend RowNumber = row_number()
+			| where RowNumber > (' + $PageNumber + ' - 1) * ' + $RowsPerPage + ' and RowNumber <= ' + $PageNumber + ' * ' + $RowsPerPage + '| project-away RowNumber'
+		}	
+
+ 
+
+		# Output what the KQL query being passed looks like
+		If ($debugFlag -eq "A") {
+			Write-Host "KQL being passed to the API is:"
+			Write-Host $query.Query
+			Write-Host " "
+			Write-Host " "
+		}
+
+ 
+
+		# Send the POST request to the API endpoint with the constructed query and the acquired access token
+		### $response = Invoke-RestMethod -Method Post -Uri $apiEndpoint -Headers $headers -Body (ConvertTo-Json $query)  ... 	
+		#
+		$response = Invoke-MgGraphRequest `
+			-Uri $apiEndpoint `
+			-OutputType PSObject `
+			-Method POST `
+			-Body (ConvertTo-Json $query)
+
+
+		# Check if there are any results returned
+		if ($response.Results.Count -gt 0) {
+			# Add the results to the Function return
+			$response.Results
+
+			# Post the output of every result found if the debugFlag is turned on
+			If ($debugFlag -eq "Y" -or $debugFlag -eq "A"){
+				Write-Host $response.Results
+			}
+
+		} else {
+			# No more results, exit the loop
+			break
+		}
+	}
+}	
+
+ 
+
+#######################################################################
+#######################        Main Code        #######################
+#######################################################################
+
+ 
+
+## Static variables defintions
+$queryResults = "c:\temp\queryResults.csv"              # Target location for the output file 
+$debugFlag = "N"             # If set to a "Y" or "A" output all rows, if set to an "A" also output KQL query     
+$maxRows = 10                                           # 10 rows of 100,000 -or- 1,000,000
+$RowsPerPage = 100000                                   # 100,000 per row
+$PageNumber  = 0                                        # start at relative 0
+
+ 
+
+# Set the API endpoint 
+$apiEndpoint = "https://graph.microsoft.com/v1.0/security/runHuntingQuery"
+
+ 
+
+# Check if the Microsoft Graph PowerShell module is already installed
+if (!(Get-Module -ListAvailable -Name Microsoft.Graph)) {
+    # Install the Microsoft Graph PowerShell module
+    Install-Module Microsoft.Graph
+}
+
+ 
+
+## Build KQL Query here
+$KQLQuery = 'DeviceFileEvents
+        | where ActionType == "FileCreated" and (FileName has "Microsoft Office" or FileName has "winword.exe" or FileName has "excel.exe" or FileName has "powerpnt.exe" or FileName has "outlook.exe")
+        | project DeviceId, DeviceName, Timestamp
+        | summarize LastOfficeEvent = max(Timestamp) by DeviceId, DeviceName
+        | order by LastOfficeEvent desc '
+
+ 
+
+<#
+## Test call for 100,000+ rows  
+$KQLQuery = 'DeviceFileEvents
+        | project DeviceId, DeviceName, FileName, Timestamp
+        | order by Timestamp desc '        
+#>
+
+ 
+
+# Initialize an array to store the results
+$results = @()
+
+ 
+
+# Connect to Microsoft Graph using the users RBAC for allowed access
+Connect-MgGraph -Scope "ThreatHunting.Read.All"
+
+ 
+
+#Go get the data
+$results = Get-KQL-Results
+
+ 
+
+try {
+    # Export the results to a CSV file
+    $results | Export-Csv -Path $queryResults -NoTypeInformation -Force
+
+ 
+
+    # Inform the user where they can find the output file
+    Write-Host ""
+    Write-Host "The file can be found at $queryResults"
+}
+catch {
+    Write-Host "Error occurred while exporting the results to a CSV file:"
+    Write-Host $_.Exception.Message
+}
