@@ -1,0 +1,67 @@
+$asrRules = @{
+    "56a863a9-875e-4185-98a7-b882c64752cd" = "Block abuse of exploited vulnerable signed drivers";
+    "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c" = "Block credential stealing from the Windows local security authority subsystem (lsass.exe)";
+    "d4f940ab-401b-4efc-aadc-ad5f3c50688a" = "Block all Office applications from creating child processes";
+    "92e97fa1-2edf-4476-bd1d-d72f0713b020" = "Block executable content from email client and webmail";
+    "01443614-cd74-433a-b99e-2ecdc07bfc25" = "Block Office applications from creating executable content";
+    "be92ba1a-96df-4bd9-95a2-b47cd0653f57" = "Block JavaScript or VBScript from launching downloaded executable content";
+    "75668c1f-73b5-4cf0-bb93-ecf5fa03e8fe" = "Block execution of potentially obfuscated scripts";
+    "c1db55ab-c21a-4637-bb3f-a12567680a6d" = "Block untrusted and unsigned processes that run from USB";
+    "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2" = "Block persistence through WMI event subscription";
+    "a87f9556-6d7e-4c74-a744-12b679424b5a" = "Block process creations originating from PSExec and WMI commands";
+    "b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4" = "Block Office communication application from creating child processes";
+    "e6db77e5-3d8a-4592-821f-ad05e654b373" = "Block Adobe Reader from creating child processes";
+    "5beb084e-ea73-4691-81d5-9289201cd444" = "Block executable files from running unless they meet a prevalence, age, or trusted list criterion";
+    "3b576869-a4ec-4529-8536-b80a7769e891" = "Block credential stealing from the Windows local security authority subsystem (lsass.exe)";
+    "26190899-23b6-427e-96c0-109b5560e210" = "Block Office applications from injecting code into other processes"
+    "be9ba2d9-53ea-4cdc-84e5-9b1eeee46550" = "Block executable content from email cient and webmail"
+    "5beb7efe-fd9a-4556-801d-275e5ffc04cc" = "Block execution of potentially obfuscated scripts"
+    "d3e037e1-3eb8-44c8-a917-57927947596d" = "Block JavaScript or VBScript from launching downloaded executable content"
+    "3b576869-a4ec-4529-8536-b80a7769e899" = "Block Office applications from creating executable content"
+    "75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84" = "Block Office applications from injecting code into other processes"
+    "26190899-1602-49e8-8b27-eb1d0a1ce869" = "Block Office communication application from creatin child processes"
+    "e6db77e5-3df2-4cf1-b95a-636979351e5b" = "Block persistence through WMI event subscription"
+    "d1e49aac-8f56-4280-b9ba-993a6d77406c" = "Block process creations originating from PSExec and WMI commands"
+    "33ddedf1-c6e0-47cb-833e-de6133960387" = "Block rebooting machine in Safe Mode"
+    "c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb" = "Block use of copied or impersonated system tools"
+    "a8f5898e-1dc8-49a9-9878-85004b8a61e6" = "Block Webshell creation for Servers"
+    "92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b" = "Block Win32 API calls from Office macros"
+    "c1db55ab-c21a-4637-bb3f-a12568109d35" = "Use advanced protection against ransomware"
+    "56a863a9-875e-4185-98a7-b882c64b5ce5" = "Block abuse of exploited vulnerable signed drivers"
+}
+
+# Get current ASR rule configuration
+$mpPreferences = Get-MpPreference
+
+# Extract ASR rule IDs and their corresponding actions
+$configuredRuleIds = $mpPreferences.AttackSurfaceReductionRules_Ids
+$configuredRuleActions = $mpPreferences.AttackSurfaceReductionRules_Actions
+
+# Create a custom object for each configured ASR rule
+$report = foreach ($i in 0..($configuredRuleIds.Count - 1)) {
+    $ruleId = $configuredRuleIds[$i]
+    $ruleAction = $configuredRuleActions[$i]
+    $friendlyName = $asrRules[$ruleId]
+
+    # Map the numerical action to a readable status
+    $status = switch ($ruleAction) {
+        0 { "Not Configured" }
+        1 { "Enabled (Block)" }
+        2 { "Audit Mode" }
+        6 { "Warn Mode" }
+        default { "Unknown" }
+    }
+
+    [PSCustomObject]@{
+        "Friendly Name" = $friendlyName
+        "Rule ID"       = $ruleId
+        "Status"        = $status
+    }
+}
+
+# Output the report
+$report | Format-Table -AutoSize
+
+#Export to CSV
+#$report | Export-Csv -Path "C:\Temp\ASR_Rule_Report.csv" -NoTypeInformation 
+#Write-Host "Report saved to C:\Temp\ASR_Rule_Report.csv"
