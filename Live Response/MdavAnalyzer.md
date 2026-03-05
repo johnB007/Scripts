@@ -19,7 +19,7 @@
 
 ## 📋 Overview
 
-A production-ready PowerShell automation script designed for **SOC analysts**, **security teams**, and **incident responders** to analyze Microsoft Defender for Endpoint (MDE) antivirus performance in real-time. 
+A production-ready PowerShell automation script designed for **SOC analysts**, **security teams**, and **incident responders** to analyze Microsoft Defender for Endpoint (MDE) antivirus performance in real-time. Upload in LR library, Run MdavAnalyzer.ps1, then GetFile "exportpath". 
 
 🎯 **Perfect for:**
 - Identifying performance bottlenecks before implementing exclusions
