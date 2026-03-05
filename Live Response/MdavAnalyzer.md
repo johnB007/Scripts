@@ -11,8 +11,6 @@
 
 **Automated performance analysis and status reporting for Microsoft Defender Antivirus**
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Usage](#-usage) • [Output](#-output-structure) • [Examples](#-examples)
-
 ---
 
 </div>
