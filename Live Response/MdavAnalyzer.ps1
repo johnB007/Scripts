@@ -1,4 +1,4 @@
-# mdavanalyzer.ps1
+# MDE-LR-MdavAnalyzer.ps1
 # Runs in MDE Live Response via runscript
 # Fixed: Better diagnostics
 <#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -71,15 +71,15 @@ function Export-IfPresent {
         if ($arr.Count -gt 0) {
             try {
                 $arr | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $CsvPath
-                Write-Host "✓ Exported $DatasetName ($($arr.Count) rows): $CsvPath"
+                Write-Host "[OK] Exported $DatasetName ($($arr.Count) rows): $CsvPath"
             } catch {
-                Write-Host "✗ Failed to export $DatasetName : $_"
+                Write-Host "[FAIL] Failed to export $DatasetName : $_"
             }
         } else {
-            Write-Host "⚠ No data for $DatasetName (array is empty)"
+            Write-Host "[WARN] No data for $DatasetName (array is empty)"
         }
     } else {
-        Write-Host "⚠ No data for $DatasetName (null)"
+        Write-Host "[WARN] No data for $DatasetName (null)"
     }
 }
 
