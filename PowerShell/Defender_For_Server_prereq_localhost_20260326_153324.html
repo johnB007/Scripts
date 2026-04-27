@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<title>Defender Server Prereq Report</title>
+<style>
+body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #1f2937; background: #f3f4f6; }
+h1, h2 { margin-bottom: 8px; }
+.meta { margin-bottom: 24px; padding: 16px; background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px; }
+.section { margin-bottom: 20px; padding: 16px; background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+th { background: #f9fafb; }
+.badge { display: inline-block; min-width: 64px; text-align: center; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pass { background: #dcfce7; color: #166534; }
+.fail { background: #fee2e2; color: #991b1b; }
+.warn { background: #fef3c7; color: #92400e; }
+</style>
+</head>
+<body>
+<h1>Microsoft Defender for Server Prerequisites Report</h1>
+<div class='meta'>
+<div><strong>Server:</strong> localhost</div>
+<div><strong>Generated:</strong> 2026-03-26 15:33:24</div>
+<div><strong>Requested environment type:</strong> Auto</div>
+<div><strong>Detected Azure VM:</strong> False</div>
+<div><strong>Effective environment type:</strong> OnPrem</div>
+<div><strong>Operating system:</strong> Microsoft Windows 11 Enterprise (10.0.26200)</div>
+</div>
+
+<div class='section'>
+<h2>Summary</h2>
+<table>
+<thead><tr><th>Check</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>All critical checks passed</td><td><span class='badge pass'>PASS</span></td></tr>
+<tr><td>All registry validations successful</td><td><span class='badge pass'>PASS</span></td></tr>
+<tr><td>All updates installed and verified</td><td><span class='badge pass'>PASS</span></td></tr>
+<tr><td>All firewall rules configured</td><td><span class='badge pass'>PASS</span></td></tr>
+<tr><td>All endpoint connectivity tests successful</td><td><span class='badge pass'>PASS</span></td></tr>
+<tr><td>All exclusions configured</td><td><span class='badge pass'>PASS</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Service Health</h2>
+<table>
+<thead><tr><th>Service</th><th>Status</th><th>Runtime</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>WinDefend</td><td><span class='badge pass'>PASS</span></td><td>Running / Auto</td><td>Running with expected start mode</td></tr>
+<tr><td>Sense</td><td><span class='badge pass'>PASS</span></td><td>Running / Auto</td><td>Running with expected start mode</td></tr>
+<tr><td>MpsSvc</td><td><span class='badge pass'>PASS</span></td><td>Running / Auto</td><td>Running with expected start mode</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Registry Validation</h2>
+<table>
+<thead><tr><th>Setting</th><th>Status</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DisableAntiSpyware</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableAntiVirus</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>ForceDefenderPassiveMode</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableRealtimeMonitoring</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableBehaviorMonitoring</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableOnAccessProtection</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableIOAVProtection</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>DisableScanOnRealtimeEnable</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>SpynetReporting</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+<tr><td>SubmitSamplesConsent</td><td><span class='badge pass'>PASS</span></td><td>Not set</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Update Validation</h2>
+<table>
+<thead><tr><th>Item</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>AMProductVersion</td><td>4.18.26010.5</td></tr>
+<tr><td>AMEngineVersion</td><td>1.1.26020.3</td></tr>
+<tr><td>AntivirusSignatureVersion</td><td>1.447.19.0</td></tr>
+<tr><td>AntivirusSignatureLastUpdated</td><td>03/26/2026 07:00:29</td></tr>
+<tr><td>Signature age</td><td>0 day(s)</td></tr>
+<tr><td>KB4052623 detected</td><td>False</td></tr>
+<tr><td>KB5005292 required</td><td>False</td></tr>
+<tr><td>KB5005292 detected</td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Firewall Profiles</h2>
+<table>
+<thead><tr><th>Profile</th><th>Status</th><th>Inbound</th><th>Outbound</th></tr></thead>
+<tbody>
+<tr><td>Domain</td><td><span class='badge pass'>PASS</span></td><td>NotConfigured</td><td>NotConfigured</td></tr>
+<tr><td>Private</td><td><span class='badge pass'>PASS</span></td><td>NotConfigured</td><td>NotConfigured</td></tr>
+<tr><td>Public</td><td><span class='badge pass'>PASS</span></td><td>NotConfigured</td><td>NotConfigured</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Endpoint Connectivity</h2>
+<table>
+<thead><tr><th>Name</th><th>Host</th><th>Port</th><th>Status</th><th>Resolved Address</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>MDE Streamlined</td><td>*.endpoint.security.microsoft.us</td><td>443</td><td><span class='badge warn'>MANUAL</span></td><td>N/A</td><td>Wildcard MDE service endpoint</td></tr>
+<tr><td>SmartScreen (DoD)</td><td>unitedstates2.ss.wd.microsoft.us</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>52.249.102.128</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>MDE Config (DoD)</td><td>config.ecs.dod.teams.microsoft.us</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>2001:489a:2255::3</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>MDE Portal</td><td>*.securitycenter.microsoft.us</td><td>443</td><td><span class='badge warn'>MANUAL</span></td><td>N/A</td><td>Wildcard portal endpoint</td></tr>
+<tr><td>Entra Sign-in (Gov)</td><td>login.microsoftonline.us</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>2001:489a:3500:28::4</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>CRL - crl.microsoft.com</td><td>crl.microsoft.com</td><td>80</td><td><span class='badge pass'>PASS</span></td><td>6.6.0.195</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>CRL - ctldl.windowsupdate.com</td><td>ctldl.windowsupdate.com</td><td>80</td><td><span class='badge pass'>PASS</span></td><td>2a04:4e42:4e::684</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>CRL - www.microsoft.com/pkiops/*</td><td>www.microsoft.com</td><td>80</td><td><span class='badge pass'>PASS</span></td><td>6.6.0.48</td><td>Host-level check for PKI ops endpoint</td></tr>
+<tr><td>CRL - www.microsoft.com/pki/certs</td><td>www.microsoft.com</td><td>80</td><td><span class='badge pass'>PASS</span></td><td>6.6.0.48</td><td>Host-level check for PKI cert endpoint</td></tr>
+<tr><td>Live Response (WNS)</td><td>*.wns.windows.com</td><td>443</td><td><span class='badge warn'>MANUAL</span></td><td>N/A</td><td>Optional Live Response wildcard endpoint</td></tr>
+<tr><td>Live Response Auth</td><td>login.live.com</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>6.6.0.7</td><td>Optional Live Response endpoint</td></tr>
+<tr><td>Entra Sign-in (Common)</td><td>login.microsoftonline.com</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>6.6.0.5</td><td>Optional Live Response endpoint</td></tr>
+<tr><td>Arc ARM (Gov)</td><td>management.usgovcloudapi.net</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>52.235.249.34</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>Arc Identity (Gov)</td><td>login.microsoftonline.us</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>2001:489a:3500:28::7</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>Arc Identity Dependency (Gov)</td><td>pasff.usgovcloudapi.net</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>2001:489a:3500:28::6</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>Arc Metadata/HIS (Gov)</td><td>gbl.his.arc.azure.us</td><td>443</td><td><span class='badge pass'>PASS</span></td><td>20.158.170.194</td><td>DNS and TCP connectivity succeeded</td></tr>
+<tr><td>Arc Guest Config (Gov)</td><td>*.guestconfiguration.azure.us</td><td>443</td><td><span class='badge warn'>MANUAL</span></td><td>N/A</td><td>Wildcard Arc Guest Configuration endpoint</td></tr>
+<tr><td>Arc Extension Packages</td><td>*.blob.core.usgovcloudapi.net</td><td>443</td><td><span class='badge warn'>MANUAL</span></td><td>N/A</td><td>Wildcard blob storage endpoint used by Arc extensions</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Third-Party Security Services</h2>
+<table>
+<thead><tr><th>Name</th><th>Display Name</th><th>State</th></tr></thead>
+<tbody>
+<tr><td colspan='3'>No Trellix, McAfee, HBSS, or Tanium services detected locally.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class='section'>
+<h2>Defender Exclusion Matches</h2>
+<table>
+<thead><tr><th>Exclusion</th></tr></thead>
+<tbody>
+<tr><td>No matching local Defender exclusions detected.</td></tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>
