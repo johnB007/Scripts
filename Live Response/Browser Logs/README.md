@@ -151,21 +151,28 @@ Output goes to `Parsed\<Browser>\<user>_<profile>_recoverable_urls.csv` with two
 
 The scan treats bytes as ISO-8859-1 so every byte maps 1:1 to a char and the regex sees the raw stream including content inside SQLite free pages.
 
-**The most reliable answer is server side:**
+**Why this script exists in the first place:**
 
-MDE telemetry keeps every URL the browser hit for 30 days, regardless of what the user clears locally. From Advanced Hunting:
+MDE does **not** log every URL the user visits. That is the whole reason this collector exists. What MDE Advanced Hunting actually has for browser activity is sparse and event driven:
+
+* `DeviceNetworkEvents` records connection level events (process, RemoteIP, RemotePort, sometimes RemoteUrl) and is generally populated only when something triggers it: Network Protection block, SmartScreen verdict, suspicious destination, indicator match, or an active investigation. Normal browsing to a benign site is usually not in this table.
+* `DeviceEvents` with `ActionType == "BrowserLaunchedToOpenUrl"` fires only when a URL is launched **outside** the browser (Office app, mail client, chat, protocol handler). It does not capture URLs the user typed or clicked inside Chrome or Edge.
+* Plain user web browsing leaves no MDE telemetry in most cases. The cleanest source of truth for "what did this user actually browse" is the on disk artifacts this script collects.
+
+Advanced Hunting is still useful as a **supplemental** lookup for the small subset of URLs MDE did capture (alerts, blocks, redirects to known bad). Example:
 
 ```kql
 DeviceNetworkEvents
 | where DeviceName == "<HOST>"
 | where InitiatingProcessFileName in~ ("chrome.exe","msedge.exe")
+| where isnotempty(RemoteUrl)
 | where Timestamp > ago(30d)
 | project Timestamp, InitiatingProcessAccountName, InitiatingProcessFileName,
-          RemoteUrl, RemoteIP, RemotePort
+          RemoteUrl, RemoteIP, RemotePort, ActionType
 | order by Timestamp desc
 ```
 
-Pair with:
+And for externally launched URLs:
 
 ```kql
 DeviceEvents
@@ -175,13 +182,13 @@ DeviceEvents
 | order by Timestamp desc
 ```
 
-Use the local script for on disk evidence (presence of files, autofill, cookies, the user's own profile state) and use Advanced Hunting for the canonical URL log.
+Treat the on disk artifacts as the primary record. Treat MDE telemetry as a partial corroborating signal.
 
 ## Validation flow
 
 1. Run with no flags first. Confirm the zip lands and `Parsed\Chrome\*_history.csv` contains real URLs.
 2. For a "deleted history" test, open a few sites in the test profile, clear browsing data Last hour Browsing history only, then re run with `-StopBrowsers -IncludeRecoverable`. Confirm the cleared URLs appear in `recoverable_urls.csv` but not in `history.csv`.
-3. Optional cross check: run the Advanced Hunting query above for the same time window. The intersection of `recoverable_urls.csv` and `DeviceNetworkEvents.RemoteUrl` is your high confidence "this URL was visited and the user tried to hide it" list.
+3. Optional partial cross check: run the Advanced Hunting query in the section above for the same time window. Only URLs that triggered MDE telemetry (Network Protection, SmartScreen, alerts, externally launched) will appear there. Absence in MDE does not mean the user did not visit the site, that is exactly why the local artifacts are the primary evidence.
 
 ## Important caveats
 
