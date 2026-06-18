@@ -1,0 +1,211 @@
+# Browser Logs collector for MDE Live Response
+
+A single PowerShell script that runs as SYSTEM inside Microsoft Defender for
+Endpoint Live Response, collects Chrome and Edge artifacts from every user
+profile on the device, parses the SQLite databases into CSV, optionally
+scans free pages and cache files for URLs the user already deleted, and
+ships everything back as a single zip you can pull with `getfile`.
+
+## Files in this folder
+
+| File | Purpose |
+|------|---------|
+| `Collect-BrowserArtifacts.ps1` | Main script. Upload this to the Live Response Library. |
+| `sqlite3.exe` (you provide) | Optional but recommended. Enables the `Parsed\` CSV output. Excluded from git via `.gitignore` so it never gets committed. |
+| `README.md` | This file. |
+| `README.html` | Rendered HTML copy. |
+
+## One time setup
+
+1. Open the Microsoft Defender portal at `https://security.microsoft.com`.
+2. Go to Settings, Endpoints, Rules, Live Response, Library.
+3. Upload `Collect-BrowserArtifacts.ps1`.
+4. Strongly recommended: grab the official `sqlite3.exe` from `https://sqlite.org/download.html` (the `sqlite-tools-win-x64-*.zip` bundle), extract `sqlite3.exe`, and upload it to the same Library. Without it the script still works, you just do not get the `Parsed\` CSV output or the recoverable URL scan.
+
+When you change the script locally, re upload it through the Library: find the file, click Edit, upload the new copy, confirm overwrite. The `run` command always serves the Library copy.
+
+## Run it from Live Response
+
+Connect to the device and run:
+
+```text
+connect <device>
+run Collect-BrowserArtifacts.ps1
+```
+
+Common variants:
+
+```text
+# Kill chrome.exe and msedge.exe first for clean SQLite snapshots
+run Collect-BrowserArtifacts.ps1 -parameters "-StopBrowsers"
+
+# Full forensic mode: clean snapshots + raw byte URL recovery from free
+# pages, WAL files, journals, and the disk cache
+run Collect-BrowserArtifacts.ps1 -parameters "-StopBrowsers -IncludeRecoverable"
+
+# Leave the staging folder, skip the zip
+run Collect-BrowserArtifacts.ps1 -parameters "-NoZip"
+
+# Custom output root
+run Collect-BrowserArtifacts.ps1 -parameters "-OutputRoot D:\Forensics"
+```
+
+The last line of script output is the zip path:
+
+```text
+ZIP_PATH=C:\ProgramData\BrowserLogs\DESKTOP-ABC_20260617-142233.zip
+```
+
+Pull it back:
+
+```text
+getfile "C:\ProgramData\BrowserLogs\DESKTOP-ABC_20260617-142233.zip"
+```
+
+The downloaded file lands in your Live Response downloads folder on your workstation.
+
+## Parameters
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `-OutputRoot` | `C:\ProgramData\BrowserLogs` | Where the staging folder and final zip are written. |
+| `-StopBrowsers` | off | Kills `chrome.exe` and `msedge.exe` before copying so SQLite snapshots are consistent. |
+| `-IncludeRecoverable` | off | Performs a raw byte regex scan over the history db, its WAL and journal, the cookies db, and the disk cache files to surface URLs that no longer exist as live rows. Writes `Parsed\<Browser>\<user>_<profile>_recoverable_urls.csv`. Slower, larger CSVs. |
+| `-NoZip` | off | Leaves the staging folder in place and skips zipping. Useful for debugging. |
+
+## What you get inside the zip
+
+```
+<HOST>_<TIMESTAMP>.zip
+  _summary\
+    collection.log              # what was copied, what was skipped, parser warnings
+    processes.csv               # running chrome / msedge processes at the time of collection
+    installed_browsers.txt      # browser versions
+    profiles_collected.csv      # inventory of profiles found
+    policies\
+      chrome_policies.reg       # HKLM Chrome policy export
+      edge_policies.reg         # HKLM Edge policy export
+  Chrome\
+    <user>\
+      _user_LocalState          # browser scoped Local State (holds the wrapped DPAPI key)
+      debug_logs\               # chrome_debug.log if present
+      <profile>\                # Default, Profile 1, Guest Profile, etc
+        history\                # History, History-journal, History-wal,
+                                # Top Sites, Top Sites-journal, Top Sites-wal,
+                                # Visited Links, Favicons, Favicons-journal, Favicons-wal
+        cookies\                # Cookies, Cookies-journal, Cookies-wal
+        logins\                 # Login Data, Login Data-wal, Login Data For Account,
+                                # Web Data, Web Data-wal, Shortcuts, Shortcuts-wal
+        prefs\                  # Preferences, Secure Preferences
+        bookmarks\              # Bookmarks, Bookmarks.bak
+        sessions\               # Sessions and Tabs (binary blobs of open and last closed tabs)
+        network\                # TransportSecurity, Cookies (newer Chromium path), etc
+        cache\
+          Cache_Data\           # index, data_0, data_1, data_2, data_3
+          code_cache_js_index   # Code Cache JS index file
+        extensions\             # manifest.json per extension version
+  Edge\
+    (same layout as Chrome)
+  Parsed\                       # only present if sqlite3.exe was available
+    Chrome\
+      <user>_<profile>_history.csv           # url, title, visit_count, typed_count, last_visit_utc, hidden
+      <user>_<profile>_visits.csv            # url, title, visit_utc, visit_duration, transition, from_visit
+      <user>_<profile>_downloads.csv         # target_path, tab_url, referrer, mime_type, bytes, timestamps
+      <user>_<profile>_cookies.csv           # host_key, name, path, expires_utc, flags  (metadata only, values not decrypted)
+      <user>_<profile>_logins.csv            # origin_url, username_value, timestamps, times_used  (no plaintext password)
+      <user>_<profile>_recoverable_urls.csv  # only with -IncludeRecoverable. Columns: Source, Url
+    Edge\
+      (same)
+```
+
+## What survives "Clear browsing data" and what does not
+
+A common SOC question: the user clicked Settings, Privacy, Clear browsing data, Last hour or All time. Can you still get those URLs?
+
+**What is wiped from the live `History` rows:**
+
+* `urls` and `visits` rows are deleted, so `history.csv` and `visits.csv` will not show them.
+
+**What this script still captures (no extra flag needed):**
+
+* `Top Sites` SQLite. Only wiped when the user picks "All time" plus "Cookies and other site data".
+* `Web Data` (autofill, search terms, addresses, payment methods).
+* `Shortcuts` (typed prefix completions, often hold the URLs the user tried to hide).
+* `Sessions\` folder. Currently open and last closed tab URLs in the binary session blobs.
+* `Bookmarks`. Only gone if the user manually removed them.
+* `Preferences` and `Secure Preferences` (last_visited_url, profile state).
+* `Favicons` SQLite. Icons fetched for visited sites stay after history clear in most configs.
+* `Network\Cookies`. Only gone if the user also checked "Cookies and other site data".
+
+**What `-IncludeRecoverable` adds:**
+
+SQLite does not zero deleted rows. They sit in free pages until the database is VACUUM'd, which Chrome does opportunistically and not very often. The `History-wal` file and the journal hold pre delete state. The disk cache `index` and `data_*` files reference every cached URL.
+
+`-IncludeRecoverable` does a raw byte regex scan for `http(s)://...` across:
+
+* `History`, `History-journal`, `History-wal`
+* `Cookies`, `Cookies-journal`, `Cookies-wal`
+* `cache\Cache_Data\index`, `data_0`, `data_1`, `data_2`, `data_3`
+
+Output goes to `Parsed\<Browser>\<user>_<profile>_recoverable_urls.csv` with two columns: `Source` (which file the URL came from) and `Url`. Deduped per profile.
+
+The scan treats bytes as ISO-8859-1 so every byte maps 1:1 to a char and the regex sees the raw stream including content inside SQLite free pages.
+
+**The most reliable answer is server side:**
+
+MDE telemetry keeps every URL the browser hit for 30 days, regardless of what the user clears locally. From Advanced Hunting:
+
+```kql
+DeviceNetworkEvents
+| where DeviceName == "<HOST>"
+| where InitiatingProcessFileName in~ ("chrome.exe","msedge.exe")
+| where Timestamp > ago(30d)
+| project Timestamp, InitiatingProcessAccountName, InitiatingProcessFileName,
+          RemoteUrl, RemoteIP, RemotePort
+| order by Timestamp desc
+```
+
+Pair with:
+
+```kql
+DeviceEvents
+| where DeviceName == "<HOST>"
+| where ActionType == "BrowserLaunchedToOpenUrl"
+| project Timestamp, AccountName, InitiatingProcessFileName, RemoteUrl, AdditionalFields
+| order by Timestamp desc
+```
+
+Use the local script for on disk evidence (presence of files, autofill, cookies, the user's own profile state) and use Advanced Hunting for the canonical URL log.
+
+## Validation flow
+
+1. Run with no flags first. Confirm the zip lands and `Parsed\Chrome\*_history.csv` contains real URLs.
+2. For a "deleted history" test, open a few sites in the test profile, clear browsing data Last hour Browsing history only, then re run with `-StopBrowsers -IncludeRecoverable`. Confirm the cleared URLs appear in `recoverable_urls.csv` but not in `history.csv`.
+3. Optional cross check: run the Advanced Hunting query above for the same time window. The intersection of `recoverable_urls.csv` and `DeviceNetworkEvents.RemoteUrl` is your high confidence "this URL was visited and the user tried to hide it" list.
+
+## Important caveats
+
+* **Cookies and saved passwords are not decrypted.** They are protected with per user DPAPI keys wrapped by an AES key in `Local State`. Live Response runs as SYSTEM, which cannot impersonate the user, so the CSVs contain metadata only (host, name, path, expiry, flags for cookies, URL, username, timestamps, usage count for logins). The raw encrypted files are still in the zip if you want to decrypt them offline with proper user keys.
+* **Locked files.** If a browser is running, `History`, `Cookies`, `Login Data`, and `Web Data` are locked. The script copies them through a shared read handle, so the copy succeeds, but the snapshot may be slightly inconsistent. Use `-StopBrowsers` if you want clean snapshots.
+* **All user profiles.** The script walks every folder under `C:\Users` and skips well known non user folders (Default, Public, WDAGUtilityAccount, defaultuser0, etc). It collects every Chrome and Edge profile per user (Default, Profile 1, Profile 2, Guest Profile).
+* **Size.** Profiles with large history, many extensions, or busy caches can produce multi hundred MB zips. The zip uses Optimal compression. `-IncludeRecoverable` adds one CSV per profile and is small compared to the raw artifacts.
+* **Permissions.** Designed for SYSTEM in Live Response. If you run it locally as a normal user, it will only see your own profile, and locked files for the running browser will fail to copy.
+* **DPAPI scope.** No part of the script attempts to read user DPAPI keys. SYSTEM can extract LSA secrets and the wrapped key from `Local State`, but decrypting requires the user logon password or the master key. Out of scope for this collector.
+
+## Troubleshooting
+
+* **No `Parsed\` folder in the zip.** `sqlite3.exe` was not found. Upload it to the Live Response Library next to the script and run again. The script checks `script folder`, `C:\ProgramData\Microsoft\Windows Defender Advanced Threat Protection\Downloads\`, and `C:\Windows\System32\` in that order.
+* **`Copy failed` warnings in `collection.log`.** The file was missing or the browser had it open with an exclusive write lock. Try `-StopBrowsers`. Locked WAL and journal files are normal when the browser is alive.
+* **Empty `profiles_collected.csv`.** No Chrome or Edge profiles exist on the device, or the user folders were redirected (Folder Redirection, roaming profile). Check `collection.log` for the user enumeration messages.
+* **`sqlite(...)` WARN lines in the log.** The sqlite3 invocation returned a non zero exit code. Common cause is a corrupted db. The script copies the db to `<dbname>.copy` before parsing so the live file is never touched. Check the warning for the parse error.
+* **No `recoverable_urls.csv` even with `-IncludeRecoverable`.** Either `sqlite3.exe` is missing (the recoverable scan also lives under the `if ($sqlite)` block) or the scanned files truly had no `http(s)://` strings. Confirm `_summary\collection.log` shows the `Recoverable URLs ... hits` line.
+* **MDE PS 5.1 host quirks.** This script avoids two known traps: `Split-Path -LiteralPath ... -Parent` (replaced with `[System.IO.Path]::GetDirectoryName`) and PS 5.1 native command stdin pipe corruption (replaced with `System.Diagnostics.Process` writing raw UTF-8 no BOM to `StandardInput.BaseStream`). If you fork the script, keep these workarounds.
+
+## Repo hygiene
+
+`Scripts\.gitignore` excludes `sqlite3.exe`. Drop the binary anywhere under `Scripts\` for local Live Response staging and it will not be committed. Verify with:
+
+```powershell
+cd <your local clone of this repo>
+git check-ignore -v "Live Response/Browser Logs/sqlite3.exe"
+```

@@ -1,0 +1,6 @@
+# Binaries staged for MDE Live Response uploads, never commit.
+sqlite3.exe
+
+# Rendered HTML siblings of Markdown docs are local convenience only.
+README.html
+*.md.html
