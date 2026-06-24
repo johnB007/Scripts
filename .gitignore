@@ -4,3 +4,7 @@ sqlite3.exe
 # Rendered HTML siblings of Markdown docs are local convenience only.
 README.html
 *.md.html
+
+# Generated diagnostic report output (local only, never committed)
+Defender_For_Server_prereq_*.html
+*_localhost_*.html
