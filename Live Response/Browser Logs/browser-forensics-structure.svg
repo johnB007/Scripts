@@ -1,221 +1,147 @@
 <svg viewBox="0 0 1100 1400" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <style>
-      .frame { fill: #0b1220; stroke: #1f2937; stroke-width: 2; }
-      .tier-label { font-family: ui-sans-serif, sans-serif; font-size: 12px; fill: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-      .title-text { font-family: ui-sans-serif, sans-serif; font-size: 20px; fill: #f1f5f9; font-weight: 700; }
-      .subtitle-text { font-family: ui-sans-serif, sans-serif; font-size: 14px; fill: #94a3b8; font-weight: 500; }
-      .category-label { font-family: ui-sans-serif, sans-serif; font-size: 13px; fill: #f1f5f9; font-weight: 600; }
-      .file-label { font-family: ui-monospace, monospace; font-size: 11px; fill: #dbeafe; font-weight: 500; }
-      .file-desc { font-family: ui-monospace, monospace; font-size: 10px; fill: #93c5fd; font-style: italic; }
-      .panel { fill: #0b2a4a; stroke: #3b82f6; stroke-width: 1.5; }
-      .panel-accent { fill: #051426; stroke: #3b82f6; stroke-width: 1.5; }
-      .divider { stroke: #1e3a5f; stroke-width: 1; }
-      .accent-bar { fill: #3b82f6; }
-      .tier-stripe { fill: #0d1626; stroke: #1e3a5f; stroke-width: 1; opacity: 0.6; }
-      .chip { fill: #1e40af; stroke: #60a5fa; stroke-width: 1; rx: 6; }
-      .chip-text { font-family: ui-sans-serif, sans-serif; font-size: 11px; fill: #f8fafc; font-weight: 600; }
-      .arrow { stroke: #3b82f6; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
-      .connection { stroke: #1e3a5f; stroke-width: 1; fill: none; stroke-dasharray: 3,2; }
-    </style>
-    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-      <polygon points="0 0, 10 3, 0 6" fill="#3b82f6" />
-    </marker>
-  </defs>
 
   <!-- Background -->
-  <rect class="frame" width="1100" height="1400" />
+  <rect width="1100" height="1400" fill="#0b1220" stroke="#1f2937" stroke-width="2"/>
 
   <!-- Title -->
-  <text x="50" y="40" class="title-text">Browser Forensics Collection Structure</text>
-  <text x="50" y="60" class="subtitle-text">ZIP format: &lt;HOST&gt;_&lt;TIMESTAMP&gt;.zip</text>
+  <text x="50" y="40" font-size="20" font-weight="700" fill="#f1f5f9">Browser Forensics Collection Structure</text>
+  <text x="50" y="60" font-size="14" fill="#94a3b8">ZIP format: &lt;HOST&gt;_&lt;TIMESTAMP&gt;.zip</text>
 
   <!-- Tier 1: Root ZIP -->
-  <g>
-    <rect class="panel" x="50" y="100" width="1000" height="140" rx="8" />
-    <rect class="accent-bar" x="50" y="100" width="4" height="140" />
-    <text x="70" y="120" class="tier-label">Tier 1 · Root Container</text>
-    
-    <rect class="chip" x="70" y="135" width="200" height="30" />
-    <text x="85" y="155" class="chip-text">ZIP Archive</text>
-    
-    <line class="divider" x1="50" y1="175" x2="1050" y2="175" />
-    
-    <text x="70" y="200" class="category-label">Key directories:</text>
-    <text x="85" y="220" class="file-label">_summary/  •  Chrome/  •  Edge/  •  Parsed/</text>
-  </g>
+  <rect x="50" y="100" width="1000" height="140" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="50" y="100" width="4" height="140" fill="#3b82f6"/>
+  <text x="70" y="120" font-size="12" font-weight="600" fill="#64748b">Tier 1 · Root Container</text>
+  
+  <rect x="70" y="135" width="200" height="30" rx="6" fill="#1e40af" stroke="#60a5fa" stroke-width="1"/>
+  <text x="85" y="155" font-size="11" font-weight="600" fill="#f8fafc">ZIP Archive</text>
+  
+  <line x1="50" y1="175" x2="1050" y2="175" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="70" y="200" font-size="13" font-weight="600" fill="#f1f5f9">Key directories:</text>
+  <text x="85" y="220" font-size="11" font-family="monospace" fill="#dbeafe">_summary/  •  Chrome/  •  Edge/  •  Parsed/</text>
 
   <!-- Tier 2: Summary -->
-  <g>
-    <rect class="tier-stripe" x="50" y="270" width="1000" height="20" />
-    <text x="70" y="287" class="tier-label">2 · Summary & Metadata</text>
-  </g>
+  <rect x="50" y="270" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
+  <text x="70" y="287" font-size="12" font-weight="600" fill="#64748b">2 · Summary &amp; Metadata</text>
 
-  <g>
-    <rect class="panel" x="50" y="300" width="220" height="280" rx="8" />
-    <rect class="accent-bar" x="50" y="300" width="4" height="280" />
-    <text x="65" y="323" class="category-label">_summary/</text>
-    
-    <g>
-      <text x="65" y="350" class="file-label">collection.log</text>
-      <text x="75" y="365" class="file-desc">copy status, warnings</text>
-    </g>
-    <g>
-      <text x="65" y="390" class="file-label">processes.csv</text>
-      <text x="75" y="405" class="file-desc">running browsers</text>
-    </g>
-    <g>
-      <text x="65" y="430" class="file-label">installed_browsers.txt</text>
-      <text x="75" y="445" class="file-desc">browser versions</text>
-    </g>
-    <g>
-      <text x="65" y="470" class="file-label">profiles_collected.csv</text>
-      <text x="75" y="485" class="file-desc">profile inventory</text>
-    </g>
-    <line class="divider" x1="65" y1="505" x2="255" y2="505" />
-    <g>
-      <text x="65" y="530" class="file-label">policies/</text>
-      <text x="75" y="547" class="file-desc">chrome_policies.reg</text>
-      <text x="75" y="562" class="file-desc">edge_policies.reg</text>
-    </g>
-  </g>
+  <!-- Summary folder -->
+  <rect x="50" y="300" width="220" height="280" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="50" y="300" width="4" height="280" fill="#3b82f6"/>
+  <text x="65" y="323" font-size="13" font-weight="600" fill="#f1f5f9">_summary/</text>
+  
+  <text x="65" y="350" font-size="11" font-family="monospace" fill="#dbeafe">collection.log</text>
+  <text x="75" y="365" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">copy status, warnings</text>
+  
+  <text x="65" y="390" font-size="11" font-family="monospace" fill="#dbeafe">processes.csv</text>
+  <text x="75" y="405" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">running browsers</text>
+  
+  <text x="65" y="430" font-size="11" font-family="monospace" fill="#dbeafe">installed_browsers.txt</text>
+  <text x="75" y="445" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">browser versions</text>
+  
+  <text x="65" y="470" font-size="11" font-family="monospace" fill="#dbeafe">profiles_collected.csv</text>
+  <text x="75" y="485" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">profile inventory</text>
+  
+  <line x1="65" y1="505" x2="255" y2="505" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="65" y="530" font-size="11" font-family="monospace" fill="#dbeafe">policies/</text>
+  <text x="75" y="547" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">chrome_policies.reg</text>
+  <text x="75" y="562" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">edge_policies.reg</text>
 
-  <!-- Tier 3: Browser Artifacts (Chrome) -->
-  <g>
-    <rect class="tier-stripe" x="50" y="600" width="1000" height="20" />
-    <text x="70" y="617" class="tier-label">3 · Browser Profiles · Raw Artifacts</text>
-  </g>
+  <!-- Tier 3: Browser Artifacts -->
+  <rect x="50" y="600" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
+  <text x="70" y="617" font-size="12" font-weight="600" fill="#64748b">3 · Browser Profiles · Raw Artifacts</text>
 
   <!-- Chrome Section -->
-  <g>
-    <rect class="panel" x="50" y="640" width="440" height="620" rx="8" />
-    <rect class="accent-bar" x="50" y="640" width="4" height="620" />
-    <text x="65" y="663" class="category-label">Chrome/</text>
-    
-    <!-- User profile -->
-    <rect class="panel-accent" x="65" y="680" width="410" height="570" rx="6" />
-    <text x="80" y="703" class="file-label">&lt;user&gt;/</text>
-    
-    <!-- LocalState -->
-    <g>
-      <text x="95" y="728" class="file-label">_user_LocalState</text>
-      <text x="105" y="743" class="file-desc">DPAPI wrapped key</text>
-    </g>
-    
-    <!-- Profile folders -->
-    <g>
-      <text x="95" y="768" class="file-label">&lt;profile&gt;/  (Default, Profile 1, etc)</text>
-    </g>
-    
-    <!-- Subdirectories in profile -->
-    <g y="790">
-      <g>
-        <rect class="panel-accent" x="105" y="790" width="360" height="370" rx="4" />
-        <text x="120" y="813" class="file-label">history/</text>
-        <text x="130" y="833" class="file-desc">History, -journal, -wal</text>
-        <text x="130" y="848" class="file-desc">Top Sites, Visited Links</text>
-        <text x="130" y="863" class="file-desc">Favicons database</text>
-        
-        <line class="divider" x1="120" y1="878" x2="455" y2="878" />
-        
-        <text x="120" y="898" class="file-label">cookies/</text>
-        <text x="130" y="913" class="file-desc">Cookies, -journal, -wal</text>
-        
-        <line class="divider" x1="120" y1="928" x2="455" y2="928" />
-        
-        <text x="120" y="948" class="file-label">logins/</text>
-        <text x="130" y="963" class="file-desc">Login Data, -wal</text>
-        <text x="130" y="978" class="file-desc">Web Data, Shortcuts</text>
-        
-        <line class="divider" x1="120" y1="993" x2="455" y2="993" />
-        
-        <text x="120" y="1013" class="file-label">prefs/, bookmarks/</text>
-        <text x="130" y="1028" class="file-desc">Preferences, Bookmarks</text>
-        
-        <line class="divider" x1="120" y1="1043" x2="455" y2="1043" />
-        
-        <text x="120" y="1063" class="file-label">sessions/, network/</text>
-        <text x="130" y="1078" class="file-desc">Session state, Transport certs</text>
-        
-        <line class="divider" x1="120" y1="1093" x2="455" y2="1093" />
-        
-        <text x="120" y="1113" class="file-label">cache/  extensions/</text>
-        <text x="130" y="1128" class="file-desc">Code cache index + data files</text>
-        <text x="130" y="1143" class="file-desc">Extension manifests</text>
-      </g>
-    </g>
-  </g>
+  <rect x="50" y="640" width="440" height="620" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="50" y="640" width="4" height="620" fill="#3b82f6"/>
+  <text x="65" y="663" font-size="13" font-weight="600" fill="#f1f5f9">Chrome/</text>
+  
+  <rect x="65" y="680" width="410" height="570" rx="6" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="80" y="703" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;/</text>
+  
+  <text x="95" y="728" font-size="11" font-family="monospace" fill="#dbeafe">_user_LocalState</text>
+  <text x="105" y="743" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">DPAPI wrapped key</text>
+  
+  <text x="95" y="768" font-size="11" font-family="monospace" fill="#dbeafe">&lt;profile&gt;/ (Default, Profile 1, etc)</text>
+  
+  <rect x="105" y="790" width="360" height="370" rx="4" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="120" y="813" font-size="11" font-family="monospace" fill="#dbeafe">history/</text>
+  <text x="130" y="833" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">History, -journal, -wal</text>
+  <text x="130" y="848" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Top Sites, Visited Links</text>
+  <text x="130" y="863" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Favicons database</text>
+  
+  <line x1="120" y1="878" x2="455" y2="878" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="120" y="898" font-size="11" font-family="monospace" fill="#dbeafe">cookies/</text>
+  <text x="130" y="913" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Cookies, -journal, -wal</text>
+  
+  <line x1="120" y1="928" x2="455" y2="928" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="120" y="948" font-size="11" font-family="monospace" fill="#dbeafe">logins/</text>
+  <text x="130" y="963" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Login Data, -wal</text>
+  <text x="130" y="978" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Web Data, Shortcuts</text>
+  
+  <line x1="120" y1="993" x2="455" y2="993" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="120" y="1013" font-size="11" font-family="monospace" fill="#dbeafe">prefs/, bookmarks/</text>
+  <text x="130" y="1028" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Preferences, Bookmarks</text>
+  
+  <line x1="120" y1="1043" x2="455" y2="1043" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="120" y="1063" font-size="11" font-family="monospace" fill="#dbeafe">sessions/, network/</text>
+  <text x="130" y="1078" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Session state, Transport certs</text>
+  
+  <line x1="120" y1="1093" x2="455" y2="1093" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="120" y="1113" font-size="11" font-family="monospace" fill="#dbeafe">cache/ extensions/</text>
+  <text x="130" y="1128" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Code cache index + data files</text>
+  <text x="130" y="1143" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Extension manifests</text>
 
   <!-- Edge Section -->
-  <g>
-    <rect class="panel" x="510" y="640" width="440" height="620" rx="8" />
-    <rect class="accent-bar" x="510" y="640" width="4" height="620" />
-    <text x="525" y="663" class="category-label">Edge/</text>
-    
-    <text x="530" y="700" class="file-label">(Same directory layout as Chrome)</text>
-    <text x="530" y="720" class="file-desc">User profiles, per-profile data,</text>
-    <text x="530" y="735" class="file-desc">history, cookies, logins, cache,</text>
-    <text x="530" y="750" class="file-desc">sessions, and extensions.</text>
-    
-    <line class="divider" x1="525" y1="780" x2="930" y2="780" />
-    
-    <text x="530" y="805" class="category-label">All artifact types identical to Chrome:</text>
-    <g y="820">
-      <text x="540" y="820" class="file-label">✓ SQLite databases locked during execution</text>
-      <text x="540" y="838" class="file-label">✓ Copy via shared read handle</text>
-      <text x="540" y="856" class="file-label">✓ Cookies and passwords remain encrypted</text>
-      <text x="540" y="874" class="file-label">✓ WAL/journal files preserved</text>
-      <text x="540" y="892" class="file-label">✓ Deleted content in free pages</text>
-      <text x="540" y="910" class="file-label">✓ Use -StopBrowsers for consistency</text>
-      <text x="540" y="928" class="file-label">✓ Use -IncludeRecoverable for deleted URLs</text>
-    </g>
-  </g>
+  <rect x="510" y="640" width="440" height="620" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="510" y="640" width="4" height="620" fill="#3b82f6"/>
+  <text x="525" y="663" font-size="13" font-weight="600" fill="#f1f5f9">Edge/</text>
+  
+  <text x="530" y="700" font-size="11" font-family="monospace" fill="#dbeafe">(Same directory layout as Chrome)</text>
+  <text x="530" y="720" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">User profiles, per-profile data,</text>
+  <text x="530" y="735" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">history, cookies, logins, cache,</text>
+  <text x="530" y="750" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">sessions, and extensions.</text>
+  
+  <line x1="525" y1="780" x2="930" y2="780" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="530" y="805" font-size="13" font-weight="600" fill="#f1f5f9">All artifact types identical to Chrome:</text>
+  <text x="540" y="820" font-size="11" font-family="monospace" fill="#dbeafe">✓ SQLite databases locked during execution</text>
+  <text x="540" y="838" font-size="11" font-family="monospace" fill="#dbeafe">✓ Copy via shared read handle</text>
+  <text x="540" y="856" font-size="11" font-family="monospace" fill="#dbeafe">✓ Cookies and passwords remain encrypted</text>
+  <text x="540" y="874" font-size="11" font-family="monospace" fill="#dbeafe">✓ WAL/journal files preserved</text>
+  <text x="540" y="892" font-size="11" font-family="monospace" fill="#dbeafe">✓ Deleted content in free pages</text>
+  <text x="540" y="910" font-size="11" font-family="monospace" fill="#dbeafe">✓ Use -StopBrowsers for consistency</text>
+  <text x="540" y="928" font-size="11" font-family="monospace" fill="#dbeafe">✓ Use -IncludeRecoverable for deleted URLs</text>
 
   <!-- Tier 4: Parsed Output -->
-  <g>
-    <rect class="tier-stripe" x="50" y="1290" width="1000" height="20" />
-    <text x="70" y="1307" class="tier-label">4 · Parsed CSV Output (requires sqlite3.exe)</text>
-  </g>
+  <rect x="50" y="1290" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
+  <text x="70" y="1307" font-size="12" font-weight="600" fill="#64748b">4 · Parsed CSV Output (requires sqlite3.exe)</text>
 
   <!-- Parsed Section -->
-  <g>
-    <rect class="panel" x="50" y="1330" width="1000" height="220" rx="8" />
-    <rect class="accent-bar" x="50" y="1330" width="4" height="220" />
-    <text x="65" y="1353" class="category-label">Parsed/Chrome/  &amp;  Parsed/Edge/</text>
-    
-    <g>
-      <text x="70" y="1378" class="file-label">&lt;user&gt;_&lt;profile&gt;_history.csv</text>
-      <text x="80" y="1391" class="file-desc">url, title, visit_count, typed_count, last_visit_utc, hidden</text>
-    </g>
-    
-    <g>
-      <text x="70" y="1410" class="file-label">&lt;user&gt;_&lt;profile&gt;_visits.csv</text>
-      <text x="80" y="1423" class="file-desc">url, title, visit_utc, visit_duration, transition, from_visit</text>
-    </g>
-    
-    <g>
-      <text x="70" y="1442" class="file-label">&lt;user&gt;_&lt;profile&gt;_downloads.csv</text>
-      <text x="80" y="1455" class="file-desc">target_path, tab_url, referrer, mime_type, bytes, timestamps</text>
-    </g>
-    
-    <g>
-      <text x="70" y="1474" class="file-label">&lt;user&gt;_&lt;profile&gt;_cookies.csv</text>
-      <text x="80" y="1487" class="file-desc">host_key, name, path, expires_utc, flags (metadata only, encrypted values redacted)</text>
-    </g>
-    
-    <g>
-      <text x="70" y="1506" class="file-label">&lt;user&gt;_&lt;profile&gt;_logins.csv</text>
-      <text x="80" y="1519" class="file-desc">origin_url, username_value, timestamps, times_used (no plaintext passwords)</text>
-    </g>
-    
-    <g>
-      <text x="70" y="1538" class="file-label">&lt;user&gt;_&lt;profile&gt;_recoverable_urls.csv</text>
-      <text x="80" y="1551" class="file-desc">Source, Url (from free pages, WAL, journal, cache index with -IncludeRecoverable flag)</text>
-    </g>
-  </g>
-
-  <!-- Footer legend -->
-  <g>
-    <text x="50" y="1370" class="file-desc" opacity="0.7">* Cookies and saved passwords protected by per user DPAPI keys. Encryption remains intact in output. Live Response runs as SYSTEM and cannot decrypt.</text>
-  </g>
+  <rect x="50" y="1330" width="1000" height="220" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
+  <rect x="50" y="1330" width="4" height="220" fill="#3b82f6"/>
+  <text x="65" y="1353" font-size="13" font-weight="600" fill="#f1f5f9">Parsed/Chrome/ &amp; Parsed/Edge/</text>
+  
+  <text x="70" y="1378" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_history.csv</text>
+  <text x="80" y="1391" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">url, title, visit_count, typed_count, last_visit_utc, hidden</text>
+  
+  <text x="70" y="1410" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_visits.csv</text>
+  <text x="80" y="1423" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">url, title, visit_utc, visit_duration, transition, from_visit</text>
+  
+  <text x="70" y="1442" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_downloads.csv</text>
+  <text x="80" y="1455" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">target_path, tab_url, referrer, mime_type, bytes, timestamps</text>
+  
+  <text x="70" y="1474" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_cookies.csv</text>
+  <text x="80" y="1487" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">host_key, name, path, expires_utc, flags (metadata only, encrypted)</text>
+  
+  <text x="70" y="1506" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_logins.csv</text>
+  <text x="80" y="1519" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">origin_url, username_value, timestamps, times_used (no passwords)</text>
+  
+  <text x="70" y="1538" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_recoverable_urls.csv</text>
+  <text x="80" y="1551" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Source, Url (free pages, WAL, journal, cache with -IncludeRecoverable)</text>
 </svg>
