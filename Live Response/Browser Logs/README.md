@@ -75,48 +75,7 @@ The downloaded file lands in your Live Response downloads folder on your worksta
 
 ## What you get inside the zip
 
-```
-<HOST>_<TIMESTAMP>.zip
-  _summary\
-    collection.log              # what was copied, what was skipped, parser warnings
-    processes.csv               # running chrome / msedge processes at the time of collection
-    installed_browsers.txt      # browser versions
-    profiles_collected.csv      # inventory of profiles found
-    policies\
-      chrome_policies.reg       # HKLM Chrome policy export
-      edge_policies.reg         # HKLM Edge policy export
-  Chrome\
-    <user>\
-      _user_LocalState          # browser scoped Local State (holds the wrapped DPAPI key)
-      debug_logs\               # chrome_debug.log if present
-      <profile>\                # Default, Profile 1, Guest Profile, etc
-        history\                # History, History-journal, History-wal,
-                                # Top Sites, Top Sites-journal, Top Sites-wal,
-                                # Visited Links, Favicons, Favicons-journal, Favicons-wal
-        cookies\                # Cookies, Cookies-journal, Cookies-wal
-        logins\                 # Login Data, Login Data-wal, Login Data For Account,
-                                # Web Data, Web Data-wal, Shortcuts, Shortcuts-wal
-        prefs\                  # Preferences, Secure Preferences
-        bookmarks\              # Bookmarks, Bookmarks.bak
-        sessions\               # Sessions and Tabs (binary blobs of open and last closed tabs)
-        network\                # TransportSecurity, Cookies (newer Chromium path), etc
-        cache\
-          Cache_Data\           # index, data_0, data_1, data_2, data_3
-          code_cache_js_index   # Code Cache JS index file
-        extensions\             # manifest.json per extension version
-  Edge\
-    (same layout as Chrome)
-  Parsed\                       # only present if sqlite3.exe was available
-    Chrome\
-      <user>_<profile>_history.csv           # url, title, visit_count, typed_count, last_visit_utc, hidden
-      <user>_<profile>_visits.csv            # url, title, visit_utc, visit_duration, transition, from_visit
-      <user>_<profile>_downloads.csv         # target_path, tab_url, referrer, mime_type, bytes, timestamps
-      <user>_<profile>_cookies.csv           # host_key, name, path, expires_utc, flags  (metadata only, values not decrypted)
-      <user>_<profile>_logins.csv            # origin_url, username_value, timestamps, times_used  (no plaintext password)
-      <user>_<profile>_recoverable_urls.csv  # only with -IncludeRecoverable. Columns: Source, Url
-    Edge\
-      (same)
-```
+![Browser Forensics Collection Structure](browser-forensics-structure.svg)
 
 ## What survives "Clear browsing data" and what does not
 
