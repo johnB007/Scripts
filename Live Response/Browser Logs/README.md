@@ -75,7 +75,7 @@ The downloaded file lands in your Live Response downloads folder on your worksta
 
 ## What you get inside the zip
 
-![Browser Forensics Collection Structure](browser-forensics-structure.svg)
+![Browser Forensics Collection Structure](https://raw.githubusercontent.com/johnB007/Scripts/main/Live%20Response/Browser%20Logs/browser-forensics-structure.svg)
 
 ## What survives "Clear browsing data" and what does not
 
