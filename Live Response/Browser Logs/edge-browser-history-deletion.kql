@@ -1,0 +1,19 @@
+// Edge Browser History Deletion Detection Hunt
+// Optimized for 999 days of data
+// Monitors file operations on Edge SQLite database files (History and History-journal)
+// Flags modifications from unusual processes (not msedge.exe)
+//
+// Detection logic:
+// - Edge stores browser history in SQLite: %AppData%\Microsoft\Edge\User Data\Default\History
+// - History-journal is the write-ahead log (WAL) file that tracks uncommitted changes
+// - FileModified or FileDeleted events indicate history database access/deletion
+// - Unusual processes modifying these files may indicate anti-forensic activity
+
+DeviceFileEvents
+| where Timestamp > ago(999d)
+| where FolderPath contains "Microsoft\\Edge\\User Data"
+| where FileName in~ ("History", "History-journal")
+| where ActionType in~ ("FileModified", "FileDeleted")
+| extend IsUnusualProcess = InitiatingProcessFileName !in~ ("msedge.exe", "MicrosoftEdgeUpdate.exe", "explorer.exe", "")
+| project Timestamp, DeviceName, DeviceId, FolderPath, FileName, ActionType, InitiatingProcessFileName, IsUnusualProcess, InitiatingProcessCommandLine
+| order by IsUnusualProcess desc, Timestamp desc

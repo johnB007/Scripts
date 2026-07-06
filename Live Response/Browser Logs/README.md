@@ -12,6 +12,7 @@ ships everything back as a single zip you can pull with `getfile`.
 |------|---------|
 | `Collect-BrowserArtifacts.ps1` | Main script. Upload this to the Live Response Library. |
 | `sqlite3.exe` (you provide) | Optional but recommended. Enables the `Parsed\` CSV output. Excluded from git via `.gitignore` so it never gets committed. |
+| `edge-browser-history-deletion.kql` | Advanced Hunting KQL to detect Edge browser history deletion events in real time across your fleet. Optimized for 999 days of historical data. |
 | `README.md` | This file. |
 | `README.html` | Rendered HTML copy. |
 
@@ -148,6 +149,69 @@ Treat the on disk artifacts as the primary record. Treat MDE telemetry as a part
 1. Run with no flags first. Confirm the zip lands and `Parsed\Chrome\*_history.csv` contains real URLs.
 2. For a "deleted history" test, open a few sites in the test profile, clear browsing data Last hour Browsing history only, then re run with `-StopBrowsers -IncludeRecoverable`. Confirm the cleared URLs appear in `recoverable_urls.csv` but not in `history.csv`.
 3. Optional partial cross check: run the Advanced Hunting query in the section above for the same time window. Only URLs that triggered MDE telemetry (Network Protection, SmartScreen, alerts, externally launched) will appear there. Absence in MDE does not mean the user did not visit the site, that is exactly why the local artifacts are the primary evidence.
+
+## KQL-Based Detection: Browser History Deletion Events
+
+While this folder focuses on **post-incident forensics** (what artifacts survive after deletion), you can also hunt for the **deletion event itself** in real time using Advanced Hunting KQL queries. This complements the Live Response approach: KQL catches the behavior as it happens across your fleet; Live Response recovers the evidence after the fact.
+
+### Edge Browser History Deletion Detection
+
+Microsoft Edge stores browsing history in SQLite files under `%AppData%\Microsoft\Edge\User Data\Default\`:
+- **`History`** - The main SQLite database with visited URLs
+- **`History-journal`** - Write-ahead logging (WAL) file that tracks uncommitted changes before they're committed to the main database
+
+When a user clears browsing history (or uses a script to delete it), MDE's NTFS minifilter driver captures `FileModified` and `FileDeleted` events on these files. The query `edge-browser-history-deletion.kql` hunts for these events optimized across 999 days of data:
+
+**Key detection signals:**
+
+1. **Risky locations:** `.lnk` shortcut files in Startup, Desktop, Quick Access, Recent, or Links folders (covered by `suspicious-lnk-file-activity.kql`)
+2. **Unusual processes:** File modifications by processes other than `msedge.exe`, `MicrosoftEdgeUpdate.exe`, or `explorer.exe` may indicate anti-forensic tooling
+3. **Timing correlation:** Multiple history file modifications in a short window suggest automated deletion or scripted cleanup
+4. **False positive mitigation:** Filter on bulk creation/modification patterns to surface genuine anti-forensic activity over routine browser operation
+
+**When to use this query:**
+- Hunting across hundreds or thousands of devices for history deletion behavior
+- Finding devices where a user or malware attempted to cover tracks
+- Building a timeline of suspicious activity before escalating to Live Response collection
+- Correlating with other suspicious events (unexpected admin account creation, lateral movement, data exfiltration)
+
+**Query location:** `edge-browser-history-deletion.kql` in this folder. Validates against SOC-Central and returns 999 days optimized results.
+
+### Why Chrome History Deletion Cannot Be Detected via KQL (Yet)
+
+This is the critical gap. Google Chrome stores the same history structure (SQLite `History`, `History-journal`) in `%AppData%\Google\Chrome\User Data\Default\`, but **MDE does not emit file operation events for Chrome database files in most environments**. Here is why:
+
+**The telemetry blind spot:**
+
+1. **Minifilter driver scope:** MDE's NTFS minifilter operates at the file system level and captures file open, close, read, write, and delete operations. However, it does not capture every single file access on the system for performance reasons. Selective hooking prioritizes:
+   - System critical files
+   - Known persistence locations (Startup, Scheduled Tasks, Registry, Services)
+   - Security-sensitive operations (authentication, process injection, registry modification)
+   - User profile folders (selective, not comprehensive)
+
+2. **Chrome database files are not prioritized:** Unlike Edge (which Microsoft directly supports), Chrome's user data folder is treated as generic user application data. When Chrome opens the History database, SQLite locks it with an exclusive handle and uses Memory Mapped IO (MMIO) to avoid repeated reads. The minifilter sees the initial open but may not capture the granular writes to individual WAL pages, and crucially, **many write operations bypass minifilter capture when SQLite uses memory mapped file ranges**.
+
+3. **WAL and journal handling:** Chrome's History-journal is a temporary file that SQLite creates, writes to, and deletes as part of transaction management. The minifilter may see the create and delete, but the writes in between are often below the reporting threshold or are merged into one event, losing the forensic signal that history deletion occurred.
+
+4. **Comparison with Edge:** Microsoft Edge, being a Microsoft product, has explicit logging hooks in the minifilter driver for its profile folder structure. The telemetry is richer and more reliable because the collection was purpose-built.
+
+**Bottom line:** Do NOT rely on KQL-based Chrome history deletion detection. There is no schema-correct query that will reliably surface Chrome history deletion events because the telemetry is unreliable or missing. Treat Chrome history deletion as a forensic-only question: use Live Response with `-IncludeRecoverable` to scan the free pages and WAL files for deleted URLs after the fact.
+
+**Detection alternatives for Chrome (none are good):**
+
+1. **Behavioral pattern matching:** Look for unusual process execution followed shortly by a process spawning chrome.exe with suspicious command line flags (but Chrome is closed during history clear, so the correlation is weak). Not implemented here because of high false positive rate.
+2. **Artifact-based:** Scan the `Shortcuts` file, `Web Data`, or `Top Sites` for absence of recently visited sites, infer deletion. Only works if the user did not also clear other data, and misses deletions entirely if the user has a small history to begin with.
+3. **Third-party browser monitoring:** Chrome Extensions or EDR agents that hook Chrome's process can log history clear events, but this requires deployment of additional software and is outside MDE's scope.
+
+**When Chrome history deletion matters most:** During incident response, the presence of cleared history combined with other suspicious artifacts (lateral movement, data staging, malware artifacts, etc.) becomes a data point that confirms the user was trying to cover tracks. Collect with Live Response and review the recoverable URLs alongside the timeline of other attack events.
+
+### One Query, One Browser: The Asymmetry
+
+This asymmetry (Edge detectable, Chrome not) reflects the current state of Windows telemetry:
+- **First-party Microsoft products** (Edge, OneDrive, Registry operations, Services, Scheduled Tasks) have rich, reliable telemetry.
+- **Third-party applications** (Chrome, Firefox, Brave, etc.) are treated as user data, not security-critical, and telemetry coverage is thin.
+
+If you need to hunt Chrome activity at scale, combine MDE telemetry with EDR agents or endpoint detection rules that monitor process behavior, not just file operations.
 
 ## Important caveats
 
