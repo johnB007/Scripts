@@ -12,7 +12,7 @@ ships everything back as a single zip you can pull with `getfile`.
 |------|---------|
 | `Collect-BrowserArtifacts.ps1` | Main script. Upload this to the Live Response Library. |
 | `sqlite3.exe` (you provide) | Optional but recommended. Enables the `Parsed\` CSV output. Excluded from git via `.gitignore` so it never gets committed. |
-| `edge-browser-history-deletion.kql` | Advanced Hunting KQL to detect Edge browser history deletion events in real time across your fleet. Optimized for 999 days of historical data. |
+| `edge-browser-history-deletion.kql` | Advanced Hunting KQL to detect Edge browser history deletion events in real time across your fleet. Optimized for 30 days of historical data. |
 | `README.md` | This file. |
 | `README.html` | Rendered HTML copy. |
 
@@ -160,7 +160,7 @@ Microsoft Edge stores browsing history in SQLite files under `%AppData%\Microsof
 - **`History`** - The main SQLite database with visited URLs
 - **`History-journal`** - Write-ahead logging (WAL) file that tracks uncommitted changes before they're committed to the main database
 
-When a user clears browsing history (or uses a script to delete it), MDE's NTFS minifilter driver captures `FileModified` and `FileDeleted` events on these files. The query `edge-browser-history-deletion.kql` hunts for these events optimized across 999 days of data:
+When a user clears browsing history (or uses a script to delete it), MDE's NTFS minifilter driver captures `FileModified` and `FileDeleted` events on these files. The query `edge-browser-history-deletion.kql` hunts for these events optimized across 30 days of data:
 
 **Key detection signals:**
 
@@ -175,7 +175,7 @@ When a user clears browsing history (or uses a script to delete it), MDE's NTFS 
 - Building a timeline of suspicious activity before escalating to Live Response collection
 - Correlating with other suspicious events (unexpected admin account creation, lateral movement, data exfiltration)
 
-**Query location:** `edge-browser-history-deletion.kql` in this folder. Validates against SOC-Central and returns 999 days optimized results.
+**Query location:** `edge-browser-history-deletion.kql` in this folder. Validates against SOC-Central and returns 30 days optimized results.
 
 ### Why Chrome History Deletion Cannot Be Detected via KQL (Yet)
 

@@ -1,5 +1,5 @@
 // Edge Browser History Deletion Detection Hunt
-// Optimized for 999 days of data
+// Optimized for 30 days of data
 // Monitors file operations on Edge SQLite database files (History and History-journal)
 // Flags modifications from unusual processes (not msedge.exe)
 //
@@ -10,7 +10,7 @@
 // - Unusual processes modifying these files may indicate anti-forensic activity
 
 DeviceFileEvents
-| where Timestamp > ago(999d)
+| where Timestamp > ago(30d)
 | where FolderPath contains "Microsoft\\Edge\\User Data"
 | where FileName in~ ("History", "History-journal")
 | where ActionType in~ ("FileModified", "FileDeleted")
