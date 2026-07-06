@@ -1,147 +1,213 @@
-<svg viewBox="0 0 1100 1400" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1200 1600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="chromeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1206;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f0903;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="edgeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a1a33;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#050d19;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="sqliteBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a0e06;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d0703;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
 
   <!-- Background -->
-  <rect width="1100" height="1400" fill="#0b1220" stroke="#1f2937" stroke-width="2"/>
+  <rect width="1200" height="1600" fill="#0b1220" stroke="#1f2937" stroke-width="2"/>
 
-  <!-- Title -->
-  <text x="50" y="40" font-size="20" font-weight="700" fill="#f1f5f9">Browser Forensics Collection Structure</text>
-  <text x="50" y="60" font-size="14" fill="#94a3b8">ZIP format: &lt;HOST&gt;_&lt;TIMESTAMP&gt;.zip</text>
+  <!-- Title Section -->
+  <rect x="40" y="30" width="1120" height="80" rx="10" fill="#0b2a4a" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="40" y="30" width="6" height="80" fill="#3b82f6" rx="3"/>
+  
+  <text x="60" y="55" font-size="26" font-weight="800" fill="#f1f5f9" font-family="ui-sans-serif, system-ui">Browser Forensics Collection Structure</text>
+  <text x="60" y="80" font-size="13" fill="#94a3b8" font-family="ui-sans-serif, system-ui">ZIP: HOST_TIMESTAMP.zip with SQLite databases, parsed CSV, and deleted URL recovery</text>
 
-  <!-- Tier 1: Root ZIP -->
-  <rect x="50" y="100" width="1000" height="140" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
-  <rect x="50" y="100" width="4" height="140" fill="#3b82f6"/>
-  <text x="70" y="120" font-size="12" font-weight="600" fill="#64748b">Tier 1 · Root Container</text>
+  <!-- Legend Chips -->
+  <rect x="60" y="125" width="16" height="16" rx="3" fill="#f59e0b"/>
+  <text x="85" y="135" font-size="11" fill="#dbeafe">Chrome artifacts</text>
   
-  <rect x="70" y="135" width="200" height="30" rx="6" fill="#1e40af" stroke="#60a5fa" stroke-width="1"/>
-  <text x="85" y="155" font-size="11" font-weight="600" fill="#f8fafc">ZIP Archive</text>
+  <rect x="280" y="125" width="16" height="16" rx="3" fill="#3b82f6"/>
+  <text x="305" y="135" font-size="11" fill="#dbeafe">Edge artifacts</text>
   
-  <line x1="50" y1="175" x2="1050" y2="175" stroke="#1e3a5f" stroke-width="1"/>
+  <rect x="470" y="125" width="16" height="16" rx="3" fill="#22c55e"/>
+  <text x="495" y="135" font-size="11" fill="#dbeafe">SQLite/WAL files</text>
   
-  <text x="70" y="200" font-size="13" font-weight="600" fill="#f1f5f9">Key directories:</text>
-  <text x="85" y="220" font-size="11" font-family="monospace" fill="#dbeafe">_summary/  •  Chrome/  •  Edge/  •  Parsed/</text>
+  <rect x="680" y="125" width="16" height="16" rx="3" fill="#22d3ee"/>
+  <text x="705" y="135" font-size="11" fill="#dbeafe">Parsed CSV output</text>
 
-  <!-- Tier 2: Summary -->
-  <rect x="50" y="270" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
-  <text x="70" y="287" font-size="12" font-weight="600" fill="#64748b">2 · Summary &amp; Metadata</text>
+  <!-- TIER 1: Root -->
+  <rect x="40" y="170" width="1120" height="30" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" rx="6"/>
+  <text x="65" y="190" font-size="12" font-weight="700" fill="#64748b" font-family="ui-monospace, monospace">1 · ZIP Container Root</text>
 
-  <!-- Summary folder -->
-  <rect x="50" y="300" width="220" height="280" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
-  <rect x="50" y="300" width="4" height="280" fill="#3b82f6"/>
-  <text x="65" y="323" font-size="13" font-weight="600" fill="#f1f5f9">_summary/</text>
+  <rect x="40" y="215" width="1120" height="140" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="40" y="215" width="5" height="140" fill="#3b82f6" rx="2"/>
   
-  <text x="65" y="350" font-size="11" font-family="monospace" fill="#dbeafe">collection.log</text>
-  <text x="75" y="365" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">copy status, warnings</text>
+  <text x="60" y="240" font-size="13" font-weight="700" fill="#f8fafc" font-family="ui-monospace, monospace">ZIP_PATH/</text>
+  <line x1="60" y1="255" x2="1140" y2="255" stroke="#1e3a5f" stroke-width="1"/>
   
-  <text x="65" y="390" font-size="11" font-family="monospace" fill="#dbeafe">processes.csv</text>
-  <text x="75" y="405" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">running browsers</text>
+  <rect x="60" y="270" width="110" height="28" rx="6" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="75" y="290" font-size="11" font-weight="600" fill="#dbeafe" font-family="ui-monospace, monospace">_summary/</text>
   
-  <text x="65" y="430" font-size="11" font-family="monospace" fill="#dbeafe">installed_browsers.txt</text>
-  <text x="75" y="445" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">browser versions</text>
+  <rect x="190" y="270" width="110" height="28" rx="6" fill="#1a1206" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="200" y="290" font-size="11" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">Chrome/</text>
   
-  <text x="65" y="470" font-size="11" font-family="monospace" fill="#dbeafe">profiles_collected.csv</text>
-  <text x="75" y="485" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">profile inventory</text>
+  <rect x="320" y="270" width="110" height="28" rx="6" fill="#0a1a33" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="335" y="290" font-size="11" font-weight="600" fill="#bfdbfe" font-family="ui-monospace, monospace">Edge/</text>
   
-  <line x1="65" y1="505" x2="255" y2="505" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="65" y="530" font-size="11" font-family="monospace" fill="#dbeafe">policies/</text>
-  <text x="75" y="547" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">chrome_policies.reg</text>
-  <text x="75" y="562" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">edge_policies.reg</text>
+  <rect x="450" y="270" width="110" height="28" rx="6" fill="#051426" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="460" y="290" font-size="11" font-weight="600" fill="#a5f3fc" font-family="ui-monospace, monospace">Parsed/</text>
 
-  <!-- Tier 3: Browser Artifacts -->
-  <rect x="50" y="600" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
-  <text x="70" y="617" font-size="12" font-weight="600" fill="#64748b">3 · Browser Profiles · Raw Artifacts</text>
+  <text x="60" y="325" font-size="11" font-family="ui-monospace, monospace" fill="#93c5fd">collection.log  •  profiles_collected.csv  •  installed_browsers.txt  •  policies/</text>
 
-  <!-- Chrome Section -->
-  <rect x="50" y="640" width="440" height="620" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
-  <rect x="50" y="640" width="4" height="620" fill="#3b82f6"/>
-  <text x="65" y="663" font-size="13" font-weight="600" fill="#f1f5f9">Chrome/</text>
-  
-  <rect x="65" y="680" width="410" height="570" rx="6" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="80" y="703" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;/</text>
-  
-  <text x="95" y="728" font-size="11" font-family="monospace" fill="#dbeafe">_user_LocalState</text>
-  <text x="105" y="743" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">DPAPI wrapped key</text>
-  
-  <text x="95" y="768" font-size="11" font-family="monospace" fill="#dbeafe">&lt;profile&gt;/ (Default, Profile 1, etc)</text>
-  
-  <rect x="105" y="790" width="360" height="370" rx="4" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="120" y="813" font-size="11" font-family="monospace" fill="#dbeafe">history/</text>
-  <text x="130" y="833" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">History, -journal, -wal</text>
-  <text x="130" y="848" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Top Sites, Visited Links</text>
-  <text x="130" y="863" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Favicons database</text>
-  
-  <line x1="120" y1="878" x2="455" y2="878" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="120" y="898" font-size="11" font-family="monospace" fill="#dbeafe">cookies/</text>
-  <text x="130" y="913" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Cookies, -journal, -wal</text>
-  
-  <line x1="120" y1="928" x2="455" y2="928" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="120" y="948" font-size="11" font-family="monospace" fill="#dbeafe">logins/</text>
-  <text x="130" y="963" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Login Data, -wal</text>
-  <text x="130" y="978" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Web Data, Shortcuts</text>
-  
-  <line x1="120" y1="993" x2="455" y2="993" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="120" y="1013" font-size="11" font-family="monospace" fill="#dbeafe">prefs/, bookmarks/</text>
-  <text x="130" y="1028" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Preferences, Bookmarks</text>
-  
-  <line x1="120" y1="1043" x2="455" y2="1043" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="120" y="1063" font-size="11" font-family="monospace" fill="#dbeafe">sessions/, network/</text>
-  <text x="130" y="1078" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Session state, Transport certs</text>
-  
-  <line x1="120" y1="1093" x2="455" y2="1093" stroke="#1e3a5f" stroke-width="1"/>
-  
-  <text x="120" y="1113" font-size="11" font-family="monospace" fill="#dbeafe">cache/ extensions/</text>
-  <text x="130" y="1128" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Code cache index + data files</text>
-  <text x="130" y="1143" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Extension manifests</text>
+  <!-- TIER 2: Summary Metadata -->
+  <rect x="40" y="385" width="1120" height="30" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" rx="6"/>
+  <text x="65" y="405" font-size="12" font-weight="700" fill="#64748b" font-family="ui-monospace, monospace">2 · Summary &amp; Metadata</text>
 
-  <!-- Edge Section -->
-  <rect x="510" y="640" width="440" height="620" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
-  <rect x="510" y="640" width="4" height="620" fill="#3b82f6"/>
-  <text x="525" y="663" font-size="13" font-weight="600" fill="#f1f5f9">Edge/</text>
+  <rect x="40" y="430" width="270" height="240" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="40" y="430" width="5" height="240" fill="#22d3ee" rx="2"/>
   
-  <text x="530" y="700" font-size="11" font-family="monospace" fill="#dbeafe">(Same directory layout as Chrome)</text>
-  <text x="530" y="720" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">User profiles, per-profile data,</text>
-  <text x="530" y="735" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">history, cookies, logins, cache,</text>
-  <text x="530" y="750" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">sessions, and extensions.</text>
+  <text x="60" y="455" font-size="13" font-weight="700" fill="#f8fafc" font-family="ui-monospace, monospace">_summary/</text>
   
-  <line x1="525" y1="780" x2="930" y2="780" stroke="#1e3a5f" stroke-width="1"/>
+  <rect x="60" y="475" width="230" height="180" rx="6" fill="#051426" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="75" y="495" font-size="11" font-weight="600" fill="#a5f3fc" font-family="ui-monospace, monospace">collection.log</text>
+  <text x="85" y="510" font-size="9" fill="#67e8f9" font-style="italic">Copy status &amp; warnings</text>
   
-  <text x="530" y="805" font-size="13" font-weight="600" fill="#f1f5f9">All artifact types identical to Chrome:</text>
-  <text x="540" y="820" font-size="11" font-family="monospace" fill="#dbeafe">✓ SQLite databases locked during execution</text>
-  <text x="540" y="838" font-size="11" font-family="monospace" fill="#dbeafe">✓ Copy via shared read handle</text>
-  <text x="540" y="856" font-size="11" font-family="monospace" fill="#dbeafe">✓ Cookies and passwords remain encrypted</text>
-  <text x="540" y="874" font-size="11" font-family="monospace" fill="#dbeafe">✓ WAL/journal files preserved</text>
-  <text x="540" y="892" font-size="11" font-family="monospace" fill="#dbeafe">✓ Deleted content in free pages</text>
-  <text x="540" y="910" font-size="11" font-family="monospace" fill="#dbeafe">✓ Use -StopBrowsers for consistency</text>
-  <text x="540" y="928" font-size="11" font-family="monospace" fill="#dbeafe">✓ Use -IncludeRecoverable for deleted URLs</text>
+  <text x="75" y="535" font-size="11" font-weight="600" fill="#a5f3fc" font-family="ui-monospace, monospace">profiles_collected.csv</text>
+  <text x="85" y="550" font-size="9" fill="#67e8f9" font-style="italic">User/profile inventory</text>
+  
+  <text x="75" y="575" font-size="11" font-weight="600" fill="#a5f3fc" font-family="ui-monospace, monospace">installed_browsers.txt</text>
+  <text x="85" y="590" font-size="9" fill="#67e8f9" font-style="italic">Browser versions detected</text>
+  
+  <text x="75" y="615" font-size="11" font-weight="600" fill="#a5f3fc" font-family="ui-monospace, monospace">policies/</text>
+  <text x="85" y="630" font-size="9" fill="#67e8f9" font-style="italic">Registry policies archive</text>
 
-  <!-- Tier 4: Parsed Output -->
-  <rect x="50" y="1290" width="1000" height="20" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" opacity="0.6"/>
-  <text x="70" y="1307" font-size="12" font-weight="600" fill="#64748b">4 · Parsed CSV Output (requires sqlite3.exe)</text>
+  <!-- TIER 3: Raw Artifacts -->
+  <rect x="40" y="690" width="1120" height="30" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" rx="6"/>
+  <text x="65" y="710" font-size="12" font-weight="700" fill="#64748b" font-family="ui-monospace, monospace">3 · Browser Profiles · Raw SQLite &amp; Binary Artifacts</text>
 
-  <!-- Parsed Section -->
-  <rect x="50" y="1330" width="1000" height="220" rx="8" fill="#0b2a4a" stroke="#3b82f6" stroke-width="1.5"/>
-  <rect x="50" y="1330" width="4" height="220" fill="#3b82f6"/>
-  <text x="65" y="1353" font-size="13" font-weight="600" fill="#f1f5f9">Parsed/Chrome/ &amp; Parsed/Edge/</text>
+  <!-- Chrome Raw -->
+  <rect x="40" y="735" width="540" height="480" rx="8" fill="url(#chromeBg)" stroke="#f59e0b" stroke-width="2"/>
+  <rect x="40" y="735" width="5" height="480" fill="#f59e0b" rx="2"/>
   
-  <text x="70" y="1378" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_history.csv</text>
-  <text x="80" y="1391" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">url, title, visit_count, typed_count, last_visit_utc, hidden</text>
+  <rect x="52" y="750" width="516" height="30" fill="#1a1206" stroke="#f59e0b" stroke-width="1.5" rx="6"/>
+  <text x="70" y="770" font-size="13" font-weight="700" fill="#fde68a" font-family="ui-monospace, monospace">Chrome/</text>
+
+  <rect x="60" y="795" width="508" height="400" rx="6" fill="#051426" stroke="#f59e0b" stroke-width="1.5"/>
   
-  <text x="70" y="1410" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_visits.csv</text>
-  <text x="80" y="1423" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">url, title, visit_utc, visit_duration, transition, from_visit</text>
+  <text x="80" y="820" font-size="11" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">Per-user profiles:</text>
+  <text x="90" y="838" font-size="10" fill="#fed7aa" font-family="ui-monospace, monospace">• Default, Profile 1, Profile 2, Guest</text>
   
-  <text x="70" y="1442" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_downloads.csv</text>
-  <text x="80" y="1455" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">target_path, tab_url, referrer, mime_type, bytes, timestamps</text>
+  <line x1="80" y1="855" x2="556" y2="855" stroke="#78350f" stroke-width="1"/>
   
-  <text x="70" y="1474" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_cookies.csv</text>
-  <text x="80" y="1487" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">host_key, name, path, expires_utc, flags (metadata only, encrypted)</text>
+  <text x="80" y="877" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">History databases:</text>
+  <text x="90" y="893" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">History, History-journal, History-wal</text>
+  <text x="90" y="906" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Top Sites, Visited Links, Favicons</text>
   
-  <text x="70" y="1506" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_logins.csv</text>
-  <text x="80" y="1519" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">origin_url, username_value, timestamps, times_used (no passwords)</text>
+  <text x="80" y="928" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">Cookies &amp; logins:</text>
+  <text x="90" y="944" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Cookies (-journal, -wal), Login Data</text>
   
-  <text x="70" y="1538" font-size="11" font-family="monospace" fill="#dbeafe">&lt;user&gt;_&lt;profile&gt;_recoverable_urls.csv</text>
-  <text x="80" y="1551" font-size="10" font-family="monospace" fill="#93c5fd" font-style="italic">Source, Url (free pages, WAL, journal, cache with -IncludeRecoverable)</text>
+  <text x="80" y="966" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">Other artifacts:</text>
+  <text x="90" y="982" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Bookmarks, Preferences, Web Data,</text>
+  <text x="90" y="995" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Sessions/, Shortcuts, Extensions/,</text>
+  <text x="90" y="1008" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Cache/ (code cache, disk cache)</text>
+  
+  <line x1="80" y1="1025" x2="556" y2="1025" stroke="#78350f" stroke-width="1"/>
+  
+  <text x="80" y="1047" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">Encryption:</text>
+  <text x="90" y="1063" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">Cookies/passwords encrypted with</text>
+  <text x="90" y="1076" font-size="9" fill="#fed7aa" font-family="ui-monospace, monospace">per-user DPAPI key in Local State</text>
+  
+  <text x="80" y="1100" font-size="9" fill="#d97706" font-weight="600">⚠ Copy with -StopBrowsers for consistency</text>
+  <text x="80" y="1115" font-size="9" fill="#d97706">⚠ WAL files hold uncommitted deletes</text>
+
+  <!-- Edge Raw -->
+  <rect x="600" y="735" width="540" height="480" rx="8" fill="url(#edgeBg)" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="600" y="735" width="5" height="480" fill="#3b82f6" rx="2"/>
+  
+  <rect x="612" y="750" width="516" height="30" fill="#0a1a33" stroke="#3b82f6" stroke-width="1.5" rx="6"/>
+  <text x="630" y="770" font-size="13" font-weight="700" fill="#bfdbfe" font-family="ui-monospace, monospace">Edge/</text>
+
+  <rect x="620" y="795" width="508" height="400" rx="6" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
+  
+  <text x="640" y="820" font-size="11" font-weight="600" fill="#bfdbfe" font-family="ui-monospace, monospace">Identical layout to Chrome:</text>
+  <text x="650" y="838" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">• User profiles with per-profile data</text>
+  <text x="650" y="851" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">• Same database structure (History, Cookies, etc)</text>
+  <text x="650" y="864" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">• WAL and journal files preserved</text>
+  <text x="650" y="877" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">• DPAPI encrypted cookies and passwords</text>
+  
+  <line x1="640" y1="895" x2="1108" y2="895" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="640" y="917" font-size="10" font-weight="600" fill="#bfdbfe" font-family="ui-monospace, monospace">Key difference from Chrome:</text>
+  <text x="650" y="933" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">✓ First-party Microsoft product</text>
+  <text x="650" y="947" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">✓ Rich MDE telemetry hooks for</text>
+  <text x="650" y="961" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">  file operations (history deletion)</text>
+  <text x="650" y="975" font-size="10" fill="#93c5fd" font-family="ui-monospace, monospace">✓ Detectable via KQL queries</text>
+  
+  <line x1="640" y1="993" x2="1108" y2="993" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="650" y="1015" font-size="9" fill="#0ea5e9" font-weight="600">→ See KQL hunt: edge-browser-history-deletion.kql</text>
+  <text x="650" y="1030" font-size="9" fill="#0ea5e9">→ Detects FileModified/FileDeleted on History files</text>
+
+  <!-- TIER 4: Parsed Output -->
+  <rect x="40" y="1235" width="1120" height="30" fill="#0d1626" stroke="#1e3a5f" stroke-width="1" rx="6"/>
+  <text x="65" y="1255" font-size="12" font-weight="700" fill="#64748b" font-family="ui-monospace, monospace">4 · Parsed CSV Output (sqlite3.exe required)</text>
+
+  <!-- Parsed Chrome -->
+  <rect x="40" y="1280" width="540" height="300" rx="8" fill="url(#chromeBg)" stroke="#f59e0b" stroke-width="2"/>
+  <rect x="40" y="1280" width="5" height="300" fill="#f59e0b" rx="2"/>
+  
+  <rect x="52" y="1295" width="516" height="30" fill="#1a1206" stroke="#f59e0b" stroke-width="1.5" rx="6"/>
+  <text x="70" y="1315" font-size="13" font-weight="700" fill="#fde68a" font-family="ui-monospace, monospace">Parsed/Chrome/</text>
+
+  <rect x="60" y="1340" width="508" height="225" rx="6" fill="#051426" stroke="#f59e0b" stroke-width="1.5"/>
+  
+  <text x="80" y="1365" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">&lt;user&gt;_&lt;profile&gt;_history.csv</text>
+  <text x="90" y="1378" font-size="8" fill="#fed7aa" font-family="ui-monospace, monospace">URL, title, visit_count, last_visit_utc</text>
+  
+  <text x="80" y="1398" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">&lt;user&gt;_&lt;profile&gt;_visits.csv</text>
+  <text x="90" y="1411" font-size="8" fill="#fed7aa" font-family="ui-monospace, monospace">URL, visit_utc, visit_duration, transition</text>
+  
+  <text x="80" y="1431" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">&lt;user&gt;_&lt;profile&gt;_cookies.csv</text>
+  <text x="90" y="1444" font-size="8" fill="#fed7aa" font-family="ui-monospace, monospace">host_key, name, expires_utc (no decryption)</text>
+  
+  <text x="80" y="1464" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">&lt;user&gt;_&lt;profile&gt;_logins.csv</text>
+  <text x="90" y="1477" font-size="8" fill="#fed7aa" font-family="ui-monospace, monospace">origin_url, username_value, timestamps</text>
+  
+  <text x="80" y="1497" font-size="10" font-weight="600" fill="#fde68a" font-family="ui-monospace, monospace">&lt;user&gt;_&lt;profile&gt;_recoverable_urls.csv</text>
+  <text x="90" y="1510" font-size="8" fill="#fed7aa" font-family="ui-monospace, monospace">Source, Url (from free pages/WAL/journal/cache)</text>
+
+  <text x="80" y="1532" font-size="9" fill="#d97706" font-weight="600">⚠ Add -IncludeRecoverable to surface deleted URLs</text>
+
+  <!-- Parsed Edge -->
+  <rect x="600" y="1280" width="540" height="300" rx="8" fill="url(#edgeBg)" stroke="#3b82f6" stroke-width="2"/>
+  <rect x="600" y="1280" width="5" height="300" fill="#3b82f6" rx="2"/>
+  
+  <rect x="612" y="1295" width="516" height="30" fill="#0a1a33" stroke="#3b82f6" stroke-width="1.5" rx="6"/>
+  <text x="630" y="1315" font-size="13" font-weight="700" fill="#bfdbfe" font-family="ui-monospace, monospace">Parsed/Edge/</text>
+
+  <rect x="620" y="1340" width="508" height="225" rx="6" fill="#051426" stroke="#3b82f6" stroke-width="1.5"/>
+  
+  <text x="640" y="1365" font-size="10" font-weight="600" fill="#bfdbfe" font-family="ui-monospace, monospace">Same CSV format as Chrome:</text>
+  <text x="650" y="1381" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">• history.csv with full visit history</text>
+  <text x="650" y="1395" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">• visits.csv with per-visit details</text>
+  <text x="650" y="1409" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">• cookies.csv (metadata only)</text>
+  <text x="650" y="1423" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">• logins.csv (usernames only)</text>
+  
+  <line x1="640" y1="1441" x2="1108" y2="1441" stroke="#1e3a5f" stroke-width="1"/>
+  
+  <text x="640" y="1463" font-size="10" font-weight="600" fill="#bfdbfe" font-family="ui-monospace, monospace">Recoverable URLs:</text>
+  <text x="650" y="1479" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">recoverable_urls.csv with deleted URLs from:</text>
+  <text x="650" y="1493" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">History, History-journal, History-wal,</text>
+  <text x="650" y="1507" font-size="9" fill="#93c5fd" font-family="ui-monospace, monospace">Cookies, cache/Cache_Data/ (index/data_*)</text>
+
+  <text x="650" y="1532" font-size="9" fill="#0ea5e9" font-weight="600">→ Use -IncludeRecoverable flag for full recovery</text>
+
+  <!-- Footer -->
+  <rect x="40" y="1610" width="1120" height="1" fill="#1e3a5f"/>
+  <text x="60" y="1628" font-size="10" fill="#64748b" font-style="italic" font-family="ui-monospace, monospace">Primary: On-disk artifacts. Supplemental: MDE Advanced Hunting (DeviceNetworkEvents, DeviceEvents with BrowserLaunchedToOpenUrl)</text>
 </svg>
