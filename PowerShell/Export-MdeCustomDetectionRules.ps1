@@ -110,16 +110,35 @@ function Get-ActionCount {
     return @($ActionList).Count
 }
 
+function Get-PropertyValue {
+    param(
+        [Parameter()]
+        [object]$InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    $prop = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -eq $prop) {
+        return $null
+    }
+
+    return $prop.Value
+}
+
 function Get-RuleSummary {
     param(
         [Parameter(Mandatory = $true)]
         [object]$Rule
     )
 
-    $automatedActions = $null
-    if ($null -ne $Rule.DetectionAction) {
-        $automatedActions = $Rule.DetectionAction.AutomatedActions
-    }
+    $detectionAction = Get-PropertyValue -InputObject $Rule -PropertyName 'DetectionAction'
+    $automatedActions = Get-PropertyValue -InputObject $detectionAction -PropertyName 'AutomatedActions'
 
     $airCount = Get-ActionCount -ActionList ($automatedActions.InitiateInvestigations)
     $avCount = Get-ActionCount -ActionList ($automatedActions.RunAntivirusScans)
@@ -172,7 +191,9 @@ function Patch-RuleToRunAv {
     )
 
     $ruleId = $Rule.Id
-    $actions = Convert-RuleActionsToHashtable -AutomatedActions $Rule.DetectionAction.AutomatedActions
+    $detectionAction = Get-PropertyValue -InputObject $Rule -PropertyName 'DetectionAction'
+    $automatedActions = Get-PropertyValue -InputObject $detectionAction -PropertyName 'AutomatedActions'
+    $actions = Convert-RuleActionsToHashtable -AutomatedActions $automatedActions
 
     $airActions = @($actions['initiateInvestigations'])
     if ($airActions.Count -eq 0) {
