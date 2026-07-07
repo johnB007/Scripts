@@ -36,6 +36,14 @@ pwsh ./Export-MdeCustomDetectionRules.ps1
 pwsh ./Export-MdeCustomDetectionRules.ps1 -CloudEnvironment AzureUsGovernment
 
 .EXAMPLE
+## Global tenant copy and paste
+$u='https://raw.githubusercontent.com/johnB007/Scripts/7a42712/PowerShell/Export-MdeCustomDetectionRules.ps1'; $f="$env:TEMP\Export-MdeCustomDetectionRules.ps1"; Invoke-WebRequest -Uri $u -OutFile $f; pwsh -File $f -InstallModules
+
+.EXAMPLE
+## US Gov tenant copy and paste
+$u='https://raw.githubusercontent.com/johnB007/Scripts/7a42712/PowerShell/Export-MdeCustomDetectionRules.ps1'; $f="$env:TEMP\Export-MdeCustomDetectionRules.ps1"; Invoke-WebRequest -Uri $u -OutFile $f; pwsh -File $f -CloudEnvironment AzureUsGovernment -InstallModules
+
+.EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1 -ConvertAirToAvScan
 #>
 
