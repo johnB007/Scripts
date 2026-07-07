@@ -42,7 +42,7 @@ pwsh ./Export-MdeCustomDetectionRules.ps1 -ConvertAirToAvScan
 [CmdletBinding()]
 param(
     [Parameter()]
-    [string]$OutputFolder = '.\mde-rules-export',
+    [string]$OutputFolder = "$env:TEMP\\mde-rules-export",
 
     [Parameter()]
     [ValidateSet('Global', 'USGov', 'USGovDoD', 'AzureUsGovernment')]
