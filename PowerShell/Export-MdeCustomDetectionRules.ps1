@@ -140,18 +140,31 @@ function Get-RuleSummary {
     $detectionAction = Get-PropertyValue -InputObject $Rule -PropertyName 'DetectionAction'
     $automatedActions = Get-PropertyValue -InputObject $detectionAction -PropertyName 'AutomatedActions'
 
-    $airCount = Get-ActionCount -ActionList ($automatedActions.InitiateInvestigations)
-    $avCount = Get-ActionCount -ActionList ($automatedActions.RunAntivirusScans)
+    $airActions = Get-PropertyValue -InputObject $automatedActions -PropertyName 'InitiateInvestigations'
+    $avActions = Get-PropertyValue -InputObject $automatedActions -PropertyName 'RunAntivirusScans'
+    $airCount = Get-ActionCount -ActionList $airActions
+    $avCount = Get-ActionCount -ActionList $avActions
 
     $automationActionsConfigured = @()
     $automationActionDetail = @()
 
     if ($null -ne $automatedActions) {
-        foreach ($prop in $automatedActions.PSObject.Properties) {
-            $count = Get-ActionCount -ActionList $prop.Value
-            if ($count -gt 0) {
-                $automationActionsConfigured += $prop.Name
-                $automationActionDetail += ("{0}({1})" -f $prop.Name, $count)
+        if ($automatedActions -is [System.Collections.IDictionary]) {
+            foreach ($key in $automatedActions.Keys) {
+                $count = Get-ActionCount -ActionList $automatedActions[$key]
+                if ($count -gt 0) {
+                    $automationActionsConfigured += [string]$key
+                    $automationActionDetail += ("{0}({1})" -f $key, $count)
+                }
+            }
+        }
+        else {
+            foreach ($prop in $automatedActions.PSObject.Properties) {
+                $count = Get-ActionCount -ActionList $prop.Value
+                if ($count -gt 0) {
+                    $automationActionsConfigured += $prop.Name
+                    $automationActionDetail += ("{0}({1})" -f $prop.Name, $count)
+                }
             }
         }
     }
