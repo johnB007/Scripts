@@ -139,6 +139,18 @@ function Get-RuleSummary {
 
     $detectionAction = Get-PropertyValue -InputObject $Rule -PropertyName 'DetectionAction'
     $automatedActions = Get-PropertyValue -InputObject $detectionAction -PropertyName 'AutomatedActions'
+    $ruleId = Get-PropertyValue -InputObject $Rule -PropertyName 'Id'
+    $displayName = Get-PropertyValue -InputObject $Rule -PropertyName 'DisplayName'
+    $status = Get-PropertyValue -InputObject $Rule -PropertyName 'Status'
+    $lastModifiedDateTime = Get-PropertyValue -InputObject $Rule -PropertyName 'LastModifiedDateTime'
+
+    if ([string]::IsNullOrWhiteSpace([string]$ruleId)) {
+        $ruleId = 'UnknownRuleId'
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$displayName)) {
+        $displayName = '(NoDisplayName)'
+    }
 
     $airActions = Get-PropertyValue -InputObject $automatedActions -PropertyName 'InitiateInvestigations'
     $avActions = Get-PropertyValue -InputObject $automatedActions -PropertyName 'RunAntivirusScans'
@@ -170,16 +182,16 @@ function Get-RuleSummary {
     }
 
     [pscustomobject]@{
-        RuleId = $Rule.Id
-        DisplayName = $Rule.DisplayName
-        Status = $Rule.Status
+        RuleId = $ruleId
+        DisplayName = $displayName
+        Status = $status
         AutomationActionsConfigured = ($automationActionsConfigured -join ';')
         AutomationActionDetail = ($automationActionDetail -join ';')
         HasInitiateInvestigations = ($airCount -gt 0)
         InitiateInvestigationsCount = $airCount
         HasRunAntivirusScans = ($avCount -gt 0)
         RunAntivirusScansCount = $avCount
-        LastModifiedDateTime = $Rule.LastModifiedDateTime
+        LastModifiedDateTime = $lastModifiedDateTime
     }
 }
 
@@ -203,7 +215,10 @@ function Patch-RuleToRunAv {
         [object]$Rule
     )
 
-    $ruleId = $Rule.Id
+    $ruleId = Get-PropertyValue -InputObject $Rule -PropertyName 'Id'
+    if ([string]::IsNullOrWhiteSpace([string]$ruleId)) {
+        return $false
+    }
     $detectionAction = Get-PropertyValue -InputObject $Rule -PropertyName 'DetectionAction'
     $automatedActions = Get-PropertyValue -InputObject $detectionAction -PropertyName 'AutomatedActions'
     $actions = Convert-RuleActionsToHashtable -AutomatedActions $automatedActions
@@ -300,9 +315,17 @@ try {
         foreach ($rule in $rules) {
             $didConvert = Patch-RuleToRunAv -Rule $rule
             if ($didConvert) {
+                $rid = Get-PropertyValue -InputObject $rule -PropertyName 'Id'
+                $rname = Get-PropertyValue -InputObject $rule -PropertyName 'DisplayName'
+                if ([string]::IsNullOrWhiteSpace([string]$rid)) {
+                    $rid = 'UnknownRuleId'
+                }
+                if ([string]::IsNullOrWhiteSpace([string]$rname)) {
+                    $rname = '(NoDisplayName)'
+                }
                 $converted += [pscustomobject]@{
-                    RuleId = $rule.Id
-                    DisplayName = $rule.DisplayName
+                    RuleId = $rid
+                    DisplayName = $rname
                     ConvertedUtc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
                 }
             }
