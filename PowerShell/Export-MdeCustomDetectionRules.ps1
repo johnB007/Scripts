@@ -13,6 +13,26 @@ initiateInvestigations so you can update those rules manually.
 By default this script is read only. If you set ConvertAirToAvScan, the script
 replaces initiateInvestigations with runAntivirusScans on matching rules.
 
+.NOTES
+Minimum requirements for read only export:
+1. PowerShell 7.
+2. A signed in work account in the target tenant.
+3. Delegated Microsoft Graph permission CustomDetection.Read.All.
+4. Defender role minimum Security Reader.
+    Accepted alternatives include Global Reader, Security Operator, or Security Administrator.
+5. Graph modules available in user scope:
+    Microsoft.Graph.Authentication and Microsoft.Graph.Beta.Security.
+
+No local admin is required. Module install uses CurrentUser scope.
+
+Cloud Shell notes:
+1. You can run this script in Azure Cloud Shell.
+2. Permission requirements stay the same for Graph and Defender roles.
+3. Azure subscription Owner or Contributor is not required for read only export.
+
+US Government support:
+Use -CloudEnvironment AzureUsGovernment.
+
 .PARAMETER OutputFolder
 Folder where CSV and JSON files are written.
 
