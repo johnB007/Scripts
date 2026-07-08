@@ -353,9 +353,21 @@ try {
         $connectParams['TenantId'] = $TenantId
     }
 
-    Connect-MgGraph @connectParams | Out-Null
+    $context = Get-MgContext -ErrorAction SilentlyContinue
+    $reuseContext = $false
 
-    $context = Get-MgContext
+    if ($null -ne $context) {
+        $contextEnv = [string](Get-PropertyValue -InputObject $context -PropertyName 'Environment')
+        if ([string]::Equals($contextEnv, $mgEnvironment, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $reuseContext = $true
+        }
+    }
+
+    if (-not $reuseContext) {
+        Connect-MgGraph @connectParams | Out-Null
+        $context = Get-MgContext
+    }
+
     if ($null -eq $context) {
         throw 'Sign in failed. No Graph context was created.'
     }
