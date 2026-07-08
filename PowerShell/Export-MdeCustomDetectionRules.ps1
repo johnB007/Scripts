@@ -49,6 +49,9 @@ When set, patch rules that use initiateInvestigations.
 .PARAMETER InstallModules
 Install required Graph modules for the current user when missing.
 
+.PARAMETER UseDeviceCode
+Use device code authentication for Graph sign in. Recommended for Cloud Shell.
+
 .EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1
 
@@ -65,6 +68,9 @@ $u='https://raw.githubusercontent.com/johnB007/Scripts/7a42712/PowerShell/Export
 
 .EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1 -ConvertAirToAvScan
+
+.EXAMPLE
+pwsh ./Export-MdeCustomDetectionRules.ps1 -UseDeviceCode
 #>
 
 [CmdletBinding()]
@@ -84,6 +90,10 @@ param(
 
     [Parameter()]
     [switch]$InstallModules
+
+    ,
+    [Parameter()]
+    [switch]$UseDeviceCode
 )
 
 Set-StrictMode -Version Latest
@@ -333,6 +343,10 @@ try {
         Scopes = $scopes
         Environment = $mgEnvironment
         NoWelcome = $true
+    }
+
+    if ($UseDeviceCode) {
+        $connectParams['UseDeviceCode'] = $true
     }
 
     if (-not [string]::IsNullOrWhiteSpace($TenantId)) {
