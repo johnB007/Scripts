@@ -52,6 +52,9 @@ Install required Graph modules for the current user when missing.
 .PARAMETER UseDeviceCode
 Use device code authentication for Graph sign in. Recommended for Cloud Shell.
 
+.PARAMETER UseAzCliToken
+Use Azure CLI token for Graph calls. Recommended for Cloud Shell one command execution.
+
 .EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1
 
@@ -71,6 +74,9 @@ pwsh ./Export-MdeCustomDetectionRules.ps1 -ConvertAirToAvScan
 
 .EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1 -UseDeviceCode
+
+.EXAMPLE
+pwsh ./Export-MdeCustomDetectionRules.ps1 -UseAzCliToken
 #>
 
 [CmdletBinding()]
@@ -94,6 +100,10 @@ param(
     ,
     [Parameter()]
     [switch]$UseDeviceCode
+
+    ,
+    [Parameter()]
+    [switch]$UseAzCliToken
 )
 
 Set-StrictMode -Version Latest
@@ -111,6 +121,20 @@ function Resolve-MgEnvironmentName {
         'USGovDoD' { return 'USGovDoD' }
         'AzureUsGovernment' { return 'USGov' }
         default { throw "Unsupported cloud environment: $Cloud" }
+    }
+}
+
+function Resolve-GraphHost {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EnvironmentName
+    )
+
+    switch ($EnvironmentName) {
+        'Global' { return 'graph.microsoft.com' }
+        'USGov' { return 'graph.microsoft.us' }
+        'USGovDoD' { return 'dod-graph.microsoft.us' }
+        default { throw "Unsupported Graph environment: $EnvironmentName" }
     }
 }
 
@@ -192,7 +216,7 @@ function Get-DetectionRules {
     $uri = "https://graph.microsoft.com/beta/security/rules/detectionRules?`$top=$PageSize"
 
     while (-not [string]::IsNullOrWhiteSpace([string]$uri)) {
-        $response = Invoke-MgGraphRequest -Method GET -Uri $uri
+        $response = Invoke-GraphRequest -Method GET -Uri $uri
         $pageItems = Get-PropertyValue -InputObject $response -PropertyName 'value'
 
         if ($null -ne $pageItems) {
@@ -203,6 +227,60 @@ function Get-DetectionRules {
     }
 
     return $allRules
+}
+
+function Get-AzCliGraphToken {
+    [CmdletBinding()]
+    param()
+
+    $token = az account get-access-token --resource-type ms-graph --query accessToken -o tsv 2>$null
+    if ([string]::IsNullOrWhiteSpace([string]$token)) {
+        throw 'Failed to get Microsoft Graph token from Azure CLI.'
+    }
+
+    return $token
+}
+
+function Invoke-GraphRequest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('GET', 'PATCH')]
+        [string]$Method,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+
+        [Parameter()]
+        [string]$Body,
+
+        [Parameter()]
+        [string]$ContentType = 'application/json'
+    )
+
+    if ($script:UseAzCliAuth) {
+        $headers = @{ Authorization = "Bearer $($script:AzCliGraphToken)" }
+        if ($Method -eq 'GET') {
+            return Invoke-RestMethod -Method GET -Uri $Uri -Headers $headers
+        }
+        else {
+            if ([string]::IsNullOrWhiteSpace($Body)) {
+                return Invoke-RestMethod -Method PATCH -Uri $Uri -Headers $headers -ContentType $ContentType
+            }
+
+            return Invoke-RestMethod -Method PATCH -Uri $Uri -Headers $headers -Body $Body -ContentType $ContentType
+        }
+    }
+
+    if ($Method -eq 'GET') {
+        return Invoke-MgGraphRequest -Method GET -Uri $Uri
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Body)) {
+        return Invoke-MgGraphRequest -Method PATCH -Uri $Uri -ContentType $ContentType
+    }
+
+    return Invoke-MgGraphRequest -Method PATCH -Uri $Uri -Body $Body -ContentType $ContentType
 }
 
 function Get-RuleSummary {
@@ -316,7 +394,7 @@ function Patch-RuleToRunAv {
     } | ConvertTo-Json -Depth 100
 
     $uri = "https://graph.microsoft.com/beta/security/rules/detectionRules/$ruleId"
-    Invoke-MgGraphRequest -Method PATCH -Uri $uri -Body $body -ContentType 'application/json' | Out-Null
+    Invoke-GraphRequest -Method PATCH -Uri $uri -Body $body -ContentType 'application/json' | Out-Null
 
     return $true
 }
@@ -326,11 +404,26 @@ try {
         throw 'PowerShell 7 or later is required for this script.'
     }
 
-    Ensure-Module -Name 'Microsoft.Graph.Authentication' -Install:$InstallModules
-
-    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-
     $mgEnvironment = Resolve-MgEnvironmentName -Cloud $CloudEnvironment
+    $script:UseAzCliAuth = $false
+    $script:AzCliGraphToken = $null
+
+    $autoUseAzCli = $false
+    if ((Get-Command az -ErrorAction SilentlyContinue) -and ($HOME -like '/home/*')) {
+        $autoUseAzCli = $true
+    }
+
+    if ($UseAzCliToken -or $autoUseAzCli) {
+        $script:UseAzCliAuth = $true
+        $script:AzCliGraphToken = Get-AzCliGraphToken
+    }
+
+    $context = $null
+
+    if (-not $script:UseAzCliAuth) {
+        Ensure-Module -Name 'Microsoft.Graph.Authentication' -Install:$InstallModules
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+    }
 
     $scopes = if ($ConvertAirToAvScan) {
         @('CustomDetection.ReadWrite.All')
@@ -353,23 +446,25 @@ try {
         $connectParams['TenantId'] = $TenantId
     }
 
-    $context = Get-MgContext -ErrorAction SilentlyContinue
-    $reuseContext = $false
+    if (-not $script:UseAzCliAuth) {
+        $context = Get-MgContext -ErrorAction SilentlyContinue
+        $reuseContext = $false
 
-    if ($null -ne $context) {
-        $contextEnv = [string](Get-PropertyValue -InputObject $context -PropertyName 'Environment')
-        if ([string]::Equals($contextEnv, $mgEnvironment, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $reuseContext = $true
+        if ($null -ne $context) {
+            $contextEnv = [string](Get-PropertyValue -InputObject $context -PropertyName 'Environment')
+            if ([string]::Equals($contextEnv, $mgEnvironment, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $reuseContext = $true
+            }
         }
-    }
 
-    if (-not $reuseContext) {
-        Connect-MgGraph @connectParams | Out-Null
-        $context = Get-MgContext
-    }
+        if (-not $reuseContext) {
+            Connect-MgGraph @connectParams | Out-Null
+            $context = Get-MgContext
+        }
 
-    if ($null -eq $context) {
-        throw 'Sign in failed. No Graph context was created.'
+        if ($null -eq $context) {
+            throw 'Sign in failed. No Graph context was created.'
+        }
     }
 
     New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
@@ -429,8 +524,18 @@ try {
         }
     }
 
+    $tenantIdText = ''
+    if ($script:UseAzCliAuth) {
+        $tenantIdText = az account show --query tenantId -o tsv 2>$null
+    }
+    else {
+        $tenantIdText = [string](Get-PropertyValue -InputObject $context -PropertyName 'TenantId')
+    }
+
     Write-Output ("Cloud environment: {0}" -f $mgEnvironment)
-    Write-Output ("Tenant id: {0}" -f $context.TenantId)
+    if (-not [string]::IsNullOrWhiteSpace($tenantIdText)) {
+        Write-Output ("Tenant id: {0}" -f $tenantIdText)
+    }
     Write-Output ("Rules found: {0}" -f @($rules).Count)
     Write-Output ("Summary CSV: {0}" -f $csvPath)
     Write-Output ("Needs manual change CSV: {0}" -f $needsChangePath)
@@ -444,5 +549,7 @@ catch {
     exit 1
 }
 finally {
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    if (-not $script:UseAzCliAuth) {
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    }
 }
