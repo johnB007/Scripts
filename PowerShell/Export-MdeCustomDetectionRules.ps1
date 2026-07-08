@@ -21,7 +21,7 @@ Minimum requirements for read only export:
 4. Defender role minimum Security Reader.
     Accepted alternatives include Global Reader, Security Operator, or Security Administrator.
 5. Graph modules available in user scope:
-    Microsoft.Graph.Authentication and Microsoft.Graph.Beta.Security.
+    Microsoft.Graph.Authentication.
 
 No local admin is required. Module install uses CurrentUser scope.
 
@@ -47,7 +47,7 @@ Optional tenant id for sign in.
 When set, patch rules that use initiateInvestigations.
 
 .PARAMETER InstallModules
-Install required Graph beta modules for the current user when missing.
+Install required Graph modules for the current user when missing.
 
 .EXAMPLE
 pwsh ./Export-MdeCustomDetectionRules.ps1
@@ -122,7 +122,7 @@ function Ensure-Module {
         throw "Module $Name is not installed. Re run with -InstallModules or install it manually."
     }
 
-    Install-Module -Name $Name -Scope CurrentUser -Repository PSGallery -Force
+    Install-Module -Name $Name -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
 }
 
 function Get-ActionCount {
@@ -151,12 +151,48 @@ function Get-PropertyValue {
         return $null
     }
 
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.Contains($PropertyName)) {
+            return $InputObject[$PropertyName]
+        }
+
+        foreach ($key in $InputObject.Keys) {
+            if ([string]::Equals([string]$key, $PropertyName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $InputObject[$key]
+            }
+        }
+    }
+
     $prop = $InputObject.PSObject.Properties[$PropertyName]
     if ($null -eq $prop) {
         return $null
     }
 
     return $prop.Value
+}
+
+function Get-DetectionRules {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [int]$PageSize = 100
+    )
+
+    $allRules = @()
+    $uri = "https://graph.microsoft.com/beta/security/rules/detectionRules?`$top=$PageSize"
+
+    while (-not [string]::IsNullOrWhiteSpace([string]$uri)) {
+        $response = Invoke-MgGraphRequest -Method GET -Uri $uri
+        $pageItems = Get-PropertyValue -InputObject $response -PropertyName 'value'
+
+        if ($null -ne $pageItems) {
+            $allRules += @($pageItems)
+        }
+
+        $uri = Get-PropertyValue -InputObject $response -PropertyName '@odata.nextLink'
+    }
+
+    return $allRules
 }
 
 function Get-RuleSummary {
@@ -281,10 +317,8 @@ try {
     }
 
     Ensure-Module -Name 'Microsoft.Graph.Authentication' -Install:$InstallModules
-    Ensure-Module -Name 'Microsoft.Graph.Beta.Security' -Install:$InstallModules
 
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-    Import-Module Microsoft.Graph.Beta.Security -ErrorAction Stop
 
     $mgEnvironment = Resolve-MgEnvironmentName -Cloud $CloudEnvironment
 
@@ -315,7 +349,7 @@ try {
     New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
     $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd_HHmmss')
 
-    $rules = Get-MgBetaSecurityRuleDetectionRule -All
+    $rules = Get-DetectionRules
 
     $rawPath = Join-Path $OutputFolder ("mde_custom_detection_rules_raw_{0}.json" -f $stamp)
     $rules | ConvertTo-Json -Depth 100 | Out-File -FilePath $rawPath -Encoding utf8
