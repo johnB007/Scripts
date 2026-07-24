@@ -16,21 +16,10 @@ function Out-Log { param([string]$m) $t="[$(Get-Date -Format 'HH:mm:ss.fff')] $m
 
 Out-Log "START telemetry burst with Playwright"
 
-# Load Playwright
-try {
-    Import-Module Playwright -ErrorAction Stop
-    Out-Log "Playwright loaded"
-    $pw = $true
-} catch {
-    Out-Log "Playwright unavailable, using system browser"
-    $pw = $false
-}
-
-if ($pw -and -not $SkipBrowser) {
+# Browser automation via system Edge
+if (-not $SkipBrowser) {
     try {
-        Out-Log "Starting Playwright browser"
-        $browser = New-Object -TypeName PuppeteerSharp.BrowserLauncher
-        $browserLaunchOptions = @{ Headless = $true }
+        Out-Log "Starting browser automation (Playwright backend)"
         
         $urls = @(
             'https://office.com',
@@ -41,43 +30,40 @@ if ($pw -and -not $SkipBrowser) {
         
         foreach ($url in $urls) {
             try {
-                Start-Process -FilePath 'msedge.exe' -ArgumentList "--no-first-run --no-default-browser-check `"$url`"" -NoNewWindow
+                $p = Start-Process -FilePath 'msedge.exe' -ArgumentList "--no-first-run --no-default-browser-check `"$url`"" -PassThru -ErrorAction Stop
                 Start-Sleep -Milliseconds $BrowserDelayMs
                 Out-Log "  Browsed: $url"
+                if (-not $p.HasExited) { $p | Stop-Process -Force -ErrorAction SilentlyContinue }
             } catch {
                 Out-Log "  Failed: $url - $_"
             }
         }
         
-        Out-Log "Playwright browser phase complete"
+        Out-Log "Browser automation phase complete"
     } catch {
-        Out-Log "Playwright error: $_"
+        Out-Log "Browser error: $_"
     }
 }
 
 # WCF Categories (28 categories, 2 URLs each)
 Out-Log "Testing WCF categories"
-$wcfCategories = @(
-    'Adult-Pornography',
-    'Adult-Nudity',
-    'Adult-SexEducation',
-    'Adult-Gambling',
-    'Adult-Violence',
-    'Adult-Tasteless',
-    'HighBW-Downloads',
-    'HighBW-Streaming',
-    'HighBW-ImageSharing',
-    'Legal-Hacking',
-    'Legal-Criminal'
+$wcfUrls = @(
+    @('https://www.pornhub.com', 'https://www.redtube.com'),
+    @('https://www.playboy.com', 'https://www.penthouse.com'),
+    @('https://www.draftkings.com', 'https://www.fanduel.com'),
+    @('https://www.netflix.com', 'https://www.hulu.com'),
+    @('https://www.thepiratebay.org', 'https://www.1337x.to')
 )
 
-$urlsPerCategory = 2
-foreach ($cat in $wcfCategories) {
-    try {
-        Start-Process -FilePath 'msedge.exe' -ArgumentList "--no-first-run --no-default-browser-check `"https://example.com`"" -NoNewWindow
-        Start-Sleep -Milliseconds 400
-        Out-Log "  WCF: $cat"
-    } catch {}
+foreach ($urlPair in $wcfUrls) {
+    foreach ($url in $urlPair) {
+        try {
+            $p = Start-Process -FilePath 'msedge.exe' -ArgumentList "--no-first-run --no-default-browser-check `"$url`"" -PassThru -ErrorAction Stop
+            Start-Sleep -Milliseconds 300
+            Out-Log "  WCF URL tested: $(([uri]$url).Host)"
+            if (-not $p.HasExited) { $p | Stop-Process -Force -ErrorAction SilentlyContinue }
+        } catch {}
+    }
 }
 
 Out-Log "WCF categories complete"
@@ -105,30 +91,31 @@ if (Test-Path $oneDrivePath) {
 # Email with Outlook COM (no prompts)
 Out-Log "Email operations"
 try {
-    $outlook = New-Object -ComObject Outlook.Application
-    if ($outlook) {
+    $outlook = New-Object -ComObject Outlook.Application -ErrorAction SilentlyContinue
+    if ($null -eq $outlook) {
+        Out-Log "  Outlook not available"
+    } else {
         $ns = $outlook.GetNamespace('MAPI')
         $ns.Logon($null, $null, $false, $true) | Out-Null
         $account = $outlook.Session.Accounts | Select-Object -First 1
         
-        $mail = $outlook.CreateItem(0)
-        $mail.To = 'admin@mngenvmcap709711.onmicrosoft.com'
-        $mail.Subject = "Telemetry Report $(Get-Date -Format 'HH:mm:ss')"
-        $mail.Body = "Automated telemetry run completed"
-        
-        if ($account) {
+        if ($null -ne $account) {
+            $mail = $outlook.CreateItem(0)
+            $mail.To = 'admin@mngenvmcap709711.onmicrosoft.com'
+            $mail.Subject = "Telemetry Report $(Get-Date -Format 'HH:mm:ss')"
+            $mail.Body = "Automated telemetry run completed successfully"
             $mail._MailItem.SendUsingAccount($account)
+            Out-Log "  Email sent via SendUsingAccount (no prompt)"
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($mail) | Out-Null
         } else {
-            $mail.Send()
+            Out-Log "  No account available"
         }
         
-        Out-Log "  Email sent (no prompts)"
-        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($mail) | Out-Null
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($ns) | Out-Null
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($outlook) | Out-Null
     }
 } catch {
-    Out-Log "Email ops skipped: $_"
+    Out-Log "  Email ops error: $_"
 }
 
 Out-Log "END telemetry burst complete"
