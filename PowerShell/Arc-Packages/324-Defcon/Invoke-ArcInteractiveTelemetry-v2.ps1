@@ -130,7 +130,7 @@ if (-not $SkipBrowser) {
         $end = [Math]::Min($start + $batchSize - 1, $batchUrls.Count - 1)
         $batch = $batchUrls[$start..$end]
         
-        Out-Log "Batch $($b+1)/$batches: Opening $($batch.Count) URLs"
+        Out-Log "Batch $($b+1)/$($batches): Opening $($batch.Count) URLs"
         
         $browser = if ((Test-Path 'C:\Program Files\Microsoft\Edge\Application\msedge.exe')) { 'C:\Program Files\Microsoft\Edge\Application\msedge.exe' } elseif ((Test-Path 'C:\Program Files\Google\Chrome\Application\chrome.exe')) { 'C:\Program Files\Google\Chrome\Application\chrome.exe' } else { $null }
         
@@ -139,10 +139,10 @@ if (-not $SkipBrowser) {
                 $p = Start-Process -FilePath $browser -ArgumentList "--no-first-run $($batch -join ' ')" -PassThru -ErrorAction Stop
                 Start-Sleep -Seconds 5
                 $p | Stop-Process -Force -ErrorAction SilentlyContinue
-                Out-Log "Batch $($b+1)/$batches closed"
+                Out-Log "Batch $($b+1)/$($batches) closed"
                 Start-Sleep -Milliseconds 500
             } catch {
-                Out-Log "Batch $($b+1)/$batches error: $_"
+                Out-Log "Batch $($b+1)/$($batches) error: $_"
             }
         }
     }
@@ -208,12 +208,12 @@ if (-not $SkipBrowser) {
         try {
             $bArgs = $batch -join '" "' | ForEach-Object { "`"$_`"" }
             $p = Start-Process -FilePath $browser -ArgumentList "--no-first-run $($batch -join ' ')" -PassThru -ErrorAction Stop
-            Out-Log "  [Batch $($b+1)/$batches] Opened $($batch.Count) WCF URLs"
+            Out-Log "  [Batch $($b+1)/$($batches)] Opened $($batch.Count) WCF URLs"
             Start-Sleep -Seconds 4
             $p | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 500
         } catch {
-            Out-Log "  [Batch $($b+1)/$batches] Error: $_"
+            Out-Log "  [Batch $($b+1)/$($batches)] Error: $_"
         }
     }
     
