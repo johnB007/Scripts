@@ -93,30 +93,8 @@ if (-not $SkipBrowser) {
                     $page.Goto($url, @{ Timeout = 30000 })
                     Start-Sleep -Milliseconds 2000
 
-                    # Extract links from M365 page
-                    try {
-                        $jsCode = @'
-() => Array.from(document.querySelectorAll("a[href]"))
-  .map(function(a) { return a.href; })
-  .filter(function(h) { return h.startsWith("http"); })
-  .slice(0, 5)
-'@
-                        $linksJson = $page.Evaluate($jsCode)
-                        $linkCount = 0
-                        foreach ($link in $linksJson) {
-                            if ($link -and $link -notmatch '\.(css|js|png|jpg|gif|ico|svg|woff|ttf)$' -and $link -ne $url) {
-                                try {
-                                    $childPage = $context.NewPage()
-                                    $childPage.Goto($link, @{ Timeout = 15000 }) | Out-Null
-                                    Start-Sleep -Milliseconds 1000
-                                    Out-Log "    [Playwright-Link] $link"
-                                    $childPage.Close()
-                                    $linkCount++
-                                } catch {}
-                            }
-                        }
-                        if ($linkCount -gt 0) { Out-Log "  [Playwright] Opened $linkCount child links" }
-                    } catch {}
+                    # Page loaded - skip child link extraction for compatibility
+                    $linkCount = 0
 
                     # Interact with M365 pages
                     if ($m365Domains | Where-Object { $url -like "*$_*" }) {
