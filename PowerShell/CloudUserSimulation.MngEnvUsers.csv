@@ -1,0 +1,12 @@
+DisplayName,UPN,Department,JobTitle,OfficeLocation,Manager,SimulationEnabled
+adm-labuser,adm-labuser@MngEnvMCAP709711.onmicrosoft.com,Security Operations,Privileged Analyst,Remote,Admin Elliott Alderson,true
+Admin Elliott Alderson,adm-ElliottAlderson@MngEnvMCAP709711.onmicrosoft.com,Identity,Privileged Administrator,Remote,System Administrator,true
+Admin Lockhart,adm-lockhart@MngEnvMCAP709711.onmicrosoft.com,Identity,Privileged Administrator,Remote,System Administrator,true
+Admin Voss,adm-voss@MngEnvMCAP709711.onmicrosoft.com,Identity,Privileged Administrator,Remote,System Administrator,true
+break glass,breakglass@MngEnvMCAP709711.onmicrosoft.com,Identity,Break Glass Account,Remote,System Administrator,false
+cam,cam@MngEnvMCAP709711.onmicrosoft.com,Operations,Analyst,Remote,Marcus Chen,true
+Diego Rivera,drivera@MngEnvMCAP709711.onmicrosoft.com,Research,Engineer,Remote,Priya Patel,true
+ElliottAlderson,ElliottAlderson@MngEnvMCAP709711.onmicrosoft.com,Security Operations,Senior Analyst,Remote,System Administrator,true
+Marcus Chen,mchen@MngEnvMCAP709711.onmicrosoft.com,Operations,Manager,Remote,System Administrator,true
+Priya Patel,ppatel@MngEnvMCAP709711.onmicrosoft.com,Finance,Analyst,Remote,Marcus Chen,true
+System Administrator,admin@MngEnvMCAP709711.onmicrosoft.com,Identity,System Administrator,Remote,System Administrator,true

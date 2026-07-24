@@ -1,0 +1,28 @@
+{
+  "UserContext": {
+    "DisplayName": "Marcus Chen",
+    "Department": "Operations",
+    "JobTitle": "Manager",
+    "OfficeLocation": "Remote",
+    "Manager": "System Administrator",
+    "UserPrincipalName": "mchen@MngEnvMCAP709711.onmicrosoft.com"
+  },
+  "MailRecipients": [],
+  "PortalUrls": [
+    "https://www.office.com/?auth=2",
+    "https://www.microsoft365.com/",
+    "https://outlook.office.com/mail/",
+    "https://teams.microsoft.com/"
+  ],
+  "PublicUrls": [
+    "https://learn.microsoft.com/",
+    "https://www.bing.com/news",
+    "https://www.microsoft.com/security/blog/"
+  ],
+  "SharePathCandidates": [],
+  "TypingLines": [
+    "Reviewing tasks for Marcus Chen.",
+    "Checking Teams and Outlook for Operations.",
+    "Opening files and portals for Manager."
+  ]
+}

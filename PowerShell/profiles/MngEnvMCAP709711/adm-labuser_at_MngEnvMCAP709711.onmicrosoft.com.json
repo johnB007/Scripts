@@ -1,0 +1,28 @@
+{
+  "UserContext": {
+    "DisplayName": "adm-labuser",
+    "Department": "Security Operations",
+    "JobTitle": "Privileged Analyst",
+    "OfficeLocation": "Remote",
+    "Manager": "Admin Elliott Alderson",
+    "UserPrincipalName": "adm-labuser@MngEnvMCAP709711.onmicrosoft.com"
+  },
+  "MailRecipients": [],
+  "PortalUrls": [
+    "https://www.office.com/?auth=2",
+    "https://www.microsoft365.com/",
+    "https://outlook.office.com/mail/",
+    "https://teams.microsoft.com/"
+  ],
+  "PublicUrls": [
+    "https://learn.microsoft.com/",
+    "https://www.bing.com/news",
+    "https://www.microsoft.com/security/blog/"
+  ],
+  "SharePathCandidates": [],
+  "TypingLines": [
+    "Reviewing tasks for adm-labuser.",
+    "Checking Teams and Outlook for Security Operations.",
+    "Opening files and portals for Privileged Analyst."
+  ]
+}

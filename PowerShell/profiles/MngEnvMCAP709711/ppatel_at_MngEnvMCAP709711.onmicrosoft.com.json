@@ -1,0 +1,28 @@
+{
+  "UserContext": {
+    "DisplayName": "Priya Patel",
+    "Department": "Finance",
+    "JobTitle": "Analyst",
+    "OfficeLocation": "Remote",
+    "Manager": "Marcus Chen",
+    "UserPrincipalName": "ppatel@MngEnvMCAP709711.onmicrosoft.com"
+  },
+  "MailRecipients": [],
+  "PortalUrls": [
+    "https://www.office.com/?auth=2",
+    "https://www.microsoft365.com/",
+    "https://outlook.office.com/mail/",
+    "https://teams.microsoft.com/"
+  ],
+  "PublicUrls": [
+    "https://learn.microsoft.com/",
+    "https://www.bing.com/news",
+    "https://www.microsoft.com/security/blog/"
+  ],
+  "SharePathCandidates": [],
+  "TypingLines": [
+    "Reviewing tasks for Priya Patel.",
+    "Checking Teams and Outlook for Finance.",
+    "Opening files and portals for Analyst."
+  ]
+}
