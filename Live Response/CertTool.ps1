@@ -1,28 +1,11 @@
 <#
 .SYNOPSIS
-    Certificate Operations Tool for Microsoft Defender for Endpoint Live Response.
-
-.DESCRIPTION
-    Enumerates, exports, or deletes certificates across common Windows
-    certificate stores. Enumerate and Export are read only. Delete removes a
-    certificate and is destructive, so it must be requested explicitly with a
-    thumbprint. All actions are logged to a timestamped file for chain of
-    custody. Retrieve output with getfile.
-
-    Original author: Delilo MSFT, 28 Jul 26.
-
-.PARAMETER Action
-    Operation to perform: Enumerate, Export, or Delete.
-
-.PARAMETER Thumbprint
-    Certificate thumbprint. Required for Export and Delete.
-
-.PARAMETER OutputFolder
-    Folder for the log and exported certificate. Defaults to
-    C:\TempExport\CertTool.
+    Certificate Operations Tool
+    Delilo MSFT 28 Jul 26
 
 .EXAMPLE
     .\CertTool.ps1 -Action Enumerate
+
 
 .EXAMPLE
     .\CertTool.ps1 -Action Export -Thumbprint ABC123...
@@ -48,12 +31,13 @@ param(
 
 $null = New-Item -ItemType Directory -Path $OutputFolder -Force -ErrorAction SilentlyContinue
 
-$Device    = $env:COMPUTERNAME
-$Utc       = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 $TimeStamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$LogFile   = Join-Path $OutputFolder "CertTool_$TimeStamp.log"
+$LogFile = Join-Path $OutputFolder "CertTool_$TimeStamp.log"
 
 $Stores = @(
+#Get-ChildItem Cert:\ -Recurse
+
+
     "Cert:\LocalMachine\My",
     "Cert:\CurrentUser\My",
     "Cert:\LocalMachine\Root",
@@ -62,6 +46,8 @@ $Stores = @(
     "Cert:\CurrentUser\CA",
     "Cert:\LocalMachine\TrustedPublisher",
     "Cert:\CurrentUser\TrustedPublisher"
+
+
 )
 
 function Write-Log {
@@ -134,7 +120,7 @@ function Invoke-CertificateEnumeration {
 
         try {
 
-            $Certificates = @(Get-ChildItem $Store -ErrorAction Stop)
+            $Certificates = Get-ChildItem $Store -ErrorAction Stop
 
             foreach ($Certificate in $Certificates) {
 
@@ -247,43 +233,33 @@ function Invoke-CertificateDeletion {
 # Action Processing
 # =================================================================
 
-Write-Log "Device: $Device  UTC: $Utc"
 Write-Log "Action Requested: $Action"
 
-try {
+switch ($Action) {
 
-    switch ($Action) {
+    "Enumerate" {
 
-        "Enumerate" {
-
-            Invoke-CertificateEnumeration
-        }
-
-        "Export" {
-
-            if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
-                throw "Thumbprint parameter is required for Export."
-            }
-
-            Invoke-CertificateExport -Thumbprint $Thumbprint
-        }
-
-        "Delete" {
-
-            if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
-                throw "Thumbprint parameter is required for Delete."
-            }
-
-            Invoke-CertificateDeletion -Thumbprint $Thumbprint
-        }
+        Invoke-CertificateEnumeration
     }
 
-    Write-Log "Log File: $LogFile"
-    Write-Output ("Use getfile to retrieve: {0}" -f $LogFile)
-    exit 0
-}
-catch {
+    "Export" {
 
-    Write-Error ("CertTool failed: {0}" -f $_.Exception.Message)
-    exit 1
+        #if (:IsNullOrWhiteSpace($Thumbprint)) {
+        #    throw "Thumbprint parameter is required for Export."
+        #}
+
+        Invoke-CertificateExport -Thumbprint $Thumbprint
+    }
+
+    "Delete" {
+#adjusted
+        if ([string]::IsNullOrWhiteSpace($Thumbprint))
+        {
+            throw "Thumbprint parameter is required for Delete."
+        }
+
+        Invoke-CertificateDeletion -Thumbprint $Thumbprint
+    }
 }
+
+Write-Log "Log File: $LogFile"
