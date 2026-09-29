@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Collect read only Microsoft Defender for Endpoint diagnostics on Linux.
+# Keep this file LF only. CRLF line endings cause Bash parser failures.
 # Upload this file to the Live Response library, then run:
 #   run Collect-MDELinuxDiagnostics.sh
 # Use the printed getfile command to retrieve the resulting archive.
@@ -9,7 +10,7 @@ set -u
 set -o pipefail
 umask 077
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 SUPPORT_MATRIX_DATE="2026-09-28"
 SUPPORT_DOC="https://learn.microsoft.com/defender-endpoint/mde-linux-prerequisites#supported-linux-distributions"
 CONNECTIVITY_DOC="https://learn.microsoft.com/defender-endpoint/linux-support-connectivity"
