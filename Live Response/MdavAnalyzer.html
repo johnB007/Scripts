@@ -1,0 +1,132 @@
+<!doctype html><html><head><meta charset="utf-8"><title>&#128737;️ MDAV Analyzer
+</title><style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; max-width: 980px; margin: 2em auto; padding: 0 1.2em; line-height: 1.55; color: #1f2328; background: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6edf3; background: #0d1117; }
+    a { color: #58a6ff; }
+    pre, :not(pre) > code { background: #161b22 !important; border-color: #30363d !important; }
+    th, td { border-color: #30363d !important; }
+    th { background: #161b22 !important; }
+    blockquote { border-left-color: #30363d !important; color: #8b949e !important; }
+    h1, h2, h3 { border-bottom-color: #21262d !important; }
+  }
+  h1, h2, h3 { border-bottom: 1px solid #d8dee4; padding-bottom: .25em; margin-top: 1.6em; }
+  h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } h3 { font-size: 1.15em; }
+  pre { background: #f6f8fa; border: 1px solid #d8dee4; border-radius: 6px; padding: .9em 1em; overflow-x: auto; font-size: .9em; }
+  code { font-family: Consolas, "Courier New", monospace; }
+  :not(pre) > code { background: #f6f8fa; padding: .15em .35em; border-radius: 4px; font-size: .9em; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #d8dee4; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; }
+  blockquote { border-left: 4px solid #d8dee4; color: #57606a; padding: 0 1em; margin: 1em 0; }
+  hr { border: 0; border-top: 1px solid #d8dee4; margin: 2em 0; }
+  img { max-width: 100%; }
+</style></head><body><div align="center">
+<h1 id="mdav-analyzer">🛡️ MDAV Analyzer</h1>
+<h3 id="microsoft-defender-performance-status-analysis-tool">Microsoft Defender Performance &amp; Status Analysis Tool</h3>
+<p><a href="https://github.com/PowerShell/PowerShell"><img src="https://img.shields.io/badge/PowerShell-5.0+-blue.svg" alt="PowerShell" /></a>
+<a href="https://www.microsoft.com/windows"><img src="https://img.shields.io/badge/Platform-Windows-lightgrey.svg" alt="Platform" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" /></a>
+<a href="https://docs.microsoft.com/en-us/microsoft-365/security/defender-endpoint/"><img src="https://img.shields.io/badge/MDE-Live%20Response-orange.svg" alt="MDE" /></a></p>
+<p><strong>Automated performance analysis and status reporting for Microsoft Defender Antivirus</strong></p>
+<hr />
+</div>
+<h2 id="overview">📋 Overview</h2>
+<p>A production-ready PowerShell automation script designed for <strong>SOC analysts</strong>, <strong>security teams</strong>, and <strong>incident responders</strong> to analyze Microsoft Defender for Endpoint (MDE) antivirus performance in real-time. Upload in LR library, Run MdavAnalyzer.ps1, then GetFile &quot;exportpath&quot;.</p>
+<p>🎯 <strong>Perfect for:</strong></p>
+<ul>
+<li>Identifying performance bottlenecks before implementing exclusions</li>
+<li>Remote diagnostics via MDE Live Response</li>
+<li>Fleet-wide performance baselining</li>
+<li>Pre/post-tuning impact assessment</li>
+</ul>
+<h2 id="features">✨ Features</h2>
+<table>
+<tr>
+<td width="50%">
+<h3 id="dual-mode-analysis">🔍 Dual-Mode Analysis</h3>
+<ul>
+<li><strong>Status Collection</strong>: Current AV configuration snapshot</li>
+<li><strong>Performance Recording</strong>: 5-minute automated ETL capture</li>
+<li><strong>Zero Touch</strong>: Fully autonomous execution (no prompts)</li>
+</ul>
+</td>
+<td width="50%">
+<h3 id="streamlined-output">📦 Streamlined Output</h3>
+<ul>
+<li><strong>Single ZIP Archive</strong>: All reports compressed automatically</li>
+<li><strong>Timestamped</strong>: Hostname + timestamp in all filenames</li>
+<li><strong>Portable</strong>: Works on any Windows 10/11 or Server 2019+ system</li>
+</ul>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<h3 id="live-response-ready">🚀 Live Response Ready</h3>
+<ul>
+<li><strong>runscript</strong> compatible for remote deployment</li>
+<li><strong>SYSTEM context</strong> execution support</li>
+<li><strong>Automatic cleanup</strong> of temporary ETL files</li>
+</ul>
+</td>
+<td width="50%">
+<h3 id="comprehensive-metrics">📊 Comprehensive Metrics</h3>
+<ul>
+<li>Top 50 files by scan duration</li>
+<li>Top 50 processes triggering scans</li>
+<li>Top 50 extensions by performance impact</li>
+<li>Top 50 paths with highest overhead</li>
+</ul>
+</td>
+</tr>
+</table>
+<h2 id="part-1-execution-in-live-response">🎯 Part 1️⃣: Execution in Live Response</h2>
+<img width="1793" height="846" alt="image" src="https://github.com/user-attachments/assets/efd7dd57-ebcd-4d11-937c-895690475e03" />
+<img width="1801" height="829" alt="image" src="https://github.com/user-attachments/assets/75ebe703-11a1-4ec8-93b5-af1e224af355" />
+<img width="1800" height="620" alt="image" src="https://github.com/user-attachments/assets/5b6cfe7e-b691-43ec-8094-68897b53d240" />
+<img width="1854" height="331" alt="image" src="https://github.com/user-attachments/assets/a50acb22-21b3-4725-bba6-d38ee33faa83" />
+<h3 id="part-2-performance-analysis-5-minute-window">Part 2️⃣: Performance Analysis (5-Minute Window)</h3>
+<table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th>Description</th>
+<th>Rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TopFiles.csv</strong></td>
+<td>Files with longest scan durations</td>
+<td>50</td>
+</tr>
+<tr>
+<td><strong>TopProcesses.csv</strong></td>
+<td>Processes triggering most scans</td>
+<td>50</td>
+</tr>
+<tr>
+<td><strong>TopExtensions.csv</strong></td>
+<td>File types by performance impact</td>
+<td>50</td>
+</tr>
+<tr>
+<td><strong>TopPaths.csv</strong></td>
+<td>Filesystem locations with highest overhead</td>
+<td>50</td>
+</tr>
+<tr>
+<td><strong>TopFilesPerProcess.csv</strong></td>
+<td>File/process scan relationships</td>
+<td>Variable</td>
+</tr>
+<tr>
+<td><strong>TopPathsPerExtension.csv</strong></td>
+<td>Path/extension cross-analysis</td>
+<td>Variable</td>
+</tr>
+</tbody>
+</table>
+<img width="1452" height="260" alt="image" src="https://github.com/user-attachments/assets/c716648c-a728-4d3f-b0b0-5841489aabd4" />
+</body></html>
