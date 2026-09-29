@@ -2,6 +2,7 @@
 #
 # Test Microsoft Defender for Endpoint outbound connectivity for Azure US
 # Government DoD IL5 Linux devices.
+# Keep this file LF only. CRLF line endings cause Bash parser failures.
 #
 # Live Response example:
 #   run LinuxMDEConnectivityAnalyzer-IL5.sh
@@ -13,7 +14,7 @@ set -u
 set -o pipefail
 umask 077
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 CONNECT_TIMEOUT=10
 MAX_TIME=20
 FAILURES=0
