@@ -32,13 +32,18 @@
     6. Sign in to DoD Graph with normal browser MFA:
        Connect-MgGraph -Environment USGovDoD -TenantId $tenantId -Scopes 'CustomDetection.Read.All' -NoWelcome
 
-    7. Find the Sentinel workspace and resource group:
+    7. Confirm the required Graph permission is present:
+       (Get-MgContext).Scopes -contains 'CustomDetection.Read.All'
+
+       The result must be True.
+
+    8. Find the Sentinel workspace and resource group:
        az resource list --resource-type Microsoft.OperationalInsights/workspaces --query "[].{Workspace:name,ResourceGroup:resourceGroup}" --output table
 
-    8. Run the script from its folder:
+    9. Run the script from its folder:
        .\Export-XdrDetectionRules.ps1 -TenantId $tenantId -SubscriptionId $subscriptionId -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>'
 
-    9. Open the printed report folder and retrieve the printed ZIP file.
+    10. Open the printed report folder and retrieve the printed ZIP file.
 
     Do not add UseDeviceCode when Conditional Access blocks device code.
     Do not run pwsh followed by the script when already inside PowerShell.
