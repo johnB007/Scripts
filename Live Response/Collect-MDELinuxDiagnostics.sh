@@ -22,6 +22,7 @@ BUNDLE_NAME="MDELinuxDiagnostics_${SAFE_HOST}_${UTC_STAMP}"
 WORK_DIR="/tmp/${BUNDLE_NAME}"
 ARCHIVE_PATH="/tmp/${BUNDLE_NAME}.tar.gz"
 SUMMARY_FILE="${WORK_DIR}/summary.txt"
+REPORT_FILE="${WORK_DIR}/MDE-Linux-Diagnostics-Report.html"
 ERROR_COUNT=0
 
 mkdir -p "$WORK_DIR" || {
@@ -39,6 +40,23 @@ trap cleanup_on_signal HUP INT TERM
 record_error() {
     ERROR_COUNT=$((ERROR_COUNT + 1))
     printf 'WARNING: %s\n' "$1" | tee -a "$SUMMARY_FILE" >&2
+}
+
+html_escape_text() {
+    printf '%s' "$1" | sed \
+        -e 's/&/\&amp;/g' \
+        -e 's/</\&lt;/g' \
+        -e 's/>/\&gt;/g' \
+        -e 's/"/\&quot;/g'
+}
+
+html_escape_file() {
+    local file="$1"
+    if [ -r "$file" ]; then
+        sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' "$file"
+    else
+        printf 'Not collected.'
+    fi
 }
 
 run_capture() {
@@ -318,6 +336,60 @@ find "$WORK_DIR" -maxdepth 4 -type f -printf '%p\t%s bytes\n' 2>/dev/null \
     printf '\nWarnings recorded: %s\n' "$ERROR_COUNT"
     printf 'UTC completed: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 } >>"$SUMMARY_FILE"
+
+if [ "$ERROR_COUNT" -eq 0 ]; then
+    OVERALL_RESULT="PASS"
+    RESULT_CLASS="pass"
+else
+    OVERALL_RESULT="COMPLETED WITH WARNINGS"
+    RESULT_CLASS="warn"
+fi
+
+cat >"$REPORT_FILE" <<EOF
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MDE Linux Diagnostic Report</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 2rem; color: #1f2937; background: #f8fafc; }
+h1, h2 { color: #0f172a; }
+.card { background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.pass { color: #166534; font-weight: bold; }
+.warn { color: #a16207; font-weight: bold; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 6px; max-height: 32rem; overflow: auto; }
+details { margin-bottom: 0.75rem; }
+summary { cursor: pointer; font-weight: bold; padding: 0.5rem; }
+</style>
+</head>
+<body>
+<h1>Microsoft Defender for Endpoint Linux Diagnostic Report</h1>
+<div class="card">
+<p><strong>Device:</strong> $(html_escape_text "$HOST_NAME")</p>
+<p><strong>Completed UTC:</strong> $(date -u '+%Y-%m-%dT%H:%M:%SZ')</p>
+<p><strong>Result:</strong> <span class="$RESULT_CLASS">$OVERALL_RESULT</span></p>
+<p><strong>Warnings:</strong> $ERROR_COUNT</p>
+<p>The complete Microsoft diagnostic archives remain in this package for support escalation.</p>
+</div>
+<div class="card">
+<h2>Primary findings</h2>
+<details open><summary>Summary and platform support</summary><pre>$(html_escape_file "$SUMMARY_FILE")</pre></details>
+<details open><summary>MDE connectivity</summary><pre>$(html_escape_file "${WORK_DIR}/mdatp-connectivity.txt")</pre></details>
+<details open><summary>MDE health</summary><pre>$(html_escape_file "${WORK_DIR}/mdatp-health.txt")</pre></details>
+<details><summary>MDE version</summary><pre>$(html_escape_file "${WORK_DIR}/mdatp-version.txt")</pre></details>
+<details><summary>MDE service</summary><pre>$(html_escape_file "${WORK_DIR}/mdatp-service.txt")</pre></details>
+<details><summary>MDE journal, previous 24 hours</summary><pre>$(html_escape_file "${WORK_DIR}/mdatp-journal.txt")</pre></details>
+<details><summary>Network configuration</summary><pre>$(html_escape_file "${WORK_DIR}/network.txt")</pre></details>
+<details><summary>System information</summary><pre>$(html_escape_file "${WORK_DIR}/system.txt")</pre></details>
+<details><summary>Package information</summary><pre>$(html_escape_file "${WORK_DIR}/packages.txt")</pre></details>
+<details><summary>Proxy environment</summary><pre>$(html_escape_file "${WORK_DIR}/proxy-environment.txt")</pre></details>
+<details><summary>Supported Linux versions</summary><pre>$(html_escape_file "${WORK_DIR}/supported-linux-versions.txt")</pre></details>
+<details><summary>Collected file inventory</summary><pre>$(html_escape_file "${WORK_DIR}/file-inventory.txt")</pre></details>
+</div>
+</body>
+</html>
+EOF
 
 if ! tar -czf "$ARCHIVE_PATH" -C /tmp "$BUNDLE_NAME"; then
     printf 'ERROR: Unable to create archive. Partial files remain at %s\n' "$WORK_DIR" >&2
