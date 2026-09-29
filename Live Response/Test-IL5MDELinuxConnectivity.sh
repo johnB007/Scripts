@@ -4,7 +4,7 @@
 # Government DoD IL5 Linux devices.
 #
 # Live Response example:
-#   run Test-IL5MDEConnectivity.sh
+#   run Test-IL5MDELinuxConnectivity.sh
 #
 # The script is read only. It creates a diagnostic archive under /tmp and
 # prints the exact getfile command needed to retrieve it.
