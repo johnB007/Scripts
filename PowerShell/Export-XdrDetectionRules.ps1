@@ -523,12 +523,38 @@ try {
     $xdrRules = @()
 
     try {
-        $graphModule = Get-Module -ListAvailable -Name Microsoft.Graph.Authentication | Select-Object -First 1
-        if ($null -eq $graphModule) {
-            throw 'Microsoft.Graph.Authentication is not installed. Run: Install-Module Microsoft.Graph.Authentication -Scope CurrentUser -Force -AllowClobber'
+        $requiredGraphCommands = @(
+            'Connect-MgGraph'
+            'Disconnect-MgGraph'
+            'Get-MgContext'
+            'Invoke-MgGraphRequest'
+        )
+        $missingGraphCommands = @(
+            $requiredGraphCommands | Where-Object {
+                $null -eq (Get-Command -Name $_ -ErrorAction SilentlyContinue)
+            }
+        )
+
+        if ($missingGraphCommands.Count -gt 0) {
+            $graphModule = Get-Module -ListAvailable -Name Microsoft.Graph.Authentication |
+                Sort-Object -Property Version -Descending |
+                Select-Object -First 1
+            if ($null -eq $graphModule) {
+                throw 'Microsoft.Graph.Authentication is not installed. Run: Install-Module Microsoft.Graph.Authentication -Scope CurrentUser -Force -AllowClobber'
+            }
+
+            Import-Module -Name $graphModule.Path -ErrorAction Stop
+
+            $missingGraphCommands = @(
+                $requiredGraphCommands | Where-Object {
+                    $null -eq (Get-Command -Name $_ -ErrorAction SilentlyContinue)
+                }
+            )
+            if ($missingGraphCommands.Count -gt 0) {
+                throw ("Microsoft.Graph.Authentication did not provide required commands: {0}" -f ($missingGraphCommands -join ', '))
+            }
         }
 
-        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $graphContext = Get-MgContext -ErrorAction SilentlyContinue
         $reuseGraphContext = $false
         if ($null -ne $graphContext) {
