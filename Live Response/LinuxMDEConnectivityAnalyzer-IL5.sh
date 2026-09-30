@@ -14,7 +14,7 @@ set -u
 set -o pipefail
 umask 077
 
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.1.0"
 CONNECT_TIMEOUT=10
 MAX_TIME=20
 FAILURES=0
@@ -28,11 +28,14 @@ UTC_STAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
 BUNDLE_NAME="IL5MDEConnectivity_${SAFE_HOST}_${UTC_STAMP}"
 WORK_DIR="/tmp/${BUNDLE_NAME}"
 ARCHIVE_PATH="/tmp/${BUNDLE_NAME}.tar.gz"
+STANDALONE_REPORT_PATH="/tmp/${BUNDLE_NAME}.html"
 SUMMARY_FILE="${WORK_DIR}/summary.txt"
 CSV_FILE="${WORK_DIR}/endpoint-results.csv"
 TLS_FILE="${WORK_DIR}/tls-certificates.txt"
 HTML_ROWS_FILE="${WORK_DIR}/endpoint-rows.html"
 REPORT_FILE="${WORK_DIR}/IL5-MDE-Connectivity-Report.html"
+OBSERVED_BLOB_HOSTS_FILE="${WORK_DIR}/observed-government-blob-hosts.txt"
+LIVE_RESPONSE_NOTES_FILE="${WORK_DIR}/live-response-transfer-notes.txt"
 
 mkdir -p "$WORK_DIR" || {
     printf 'ERROR: Unable to create %s\n' "$WORK_DIR" >&2
@@ -299,6 +302,9 @@ test_endpoint "MDE government identity" "Required" \
     "https://login.microsoftonline.us/" "login.microsoftonline.us" "443"
 test_endpoint "MDE Live Response identity" "Required" \
     "https://login.live.com/" "login.live.com" "443"
+test_endpoint "MDE DoD government Blob baseline" "Required" \
+    "https://onboardingpckgsusgvprd.blob.core.usgovcloudapi.net/" \
+    "onboardingpckgsusgvprd.blob.core.usgovcloudapi.net" "443"
 test_endpoint "MDE certificate revocation" "Required" \
     "http://crl.microsoft.com/pki/crl/" "crl.microsoft.com" "80"
 test_endpoint "MDE certificate operations" "Required" \
@@ -308,12 +314,27 @@ test_endpoint "MDE certificate download" "Required" \
 
 cat >"${WORK_DIR}/wildcard-endpoints.txt" <<'EOF'
 Wildcard endpoints cannot be tested as literal DNS names.
-The native mdatp connectivity test discovers and tests the concrete tenant
-service endpoints used by the installed Defender agent.
+The analyzer tests documented concrete DoD Blob hosts and any concrete
+government Blob hosts observed in the local MDE journal. Passing one storage
+account does not prove that a firewall permits the full wildcard.
 
 Required MDE US Government:
   *.endpoint.security.microsoft.us:443
   *.wns.windows.com:443
+  *.blob.core.usgovcloudapi.net:443
+EOF
+
+cat >"$LIVE_RESPONSE_NOTES_FILE" <<'EOF'
+Live Response uses separate control and file transfer paths. A session can
+connect while library script delivery or getfile transfer fails because a
+government Blob hostname is blocked.
+
+The analyzer itself must first be delivered through Live Response. If Blob
+access prevents that delivery, this script cannot start and cannot report the
+failure. Test from another approved local administration channel in that case.
+
+Anonymous root probes validate DNS, TCP, TLS, proxy, and HTTP transport. They
+do not validate authorization to a time limited Live Response SAS URL.
 EOF
 
 if command -v mdatp >/dev/null 2>&1; then
@@ -357,6 +378,34 @@ fi
 if command -v journalctl >/dev/null 2>&1; then
     run_logged "MDE service journal" "${WORK_DIR}/mdatp-journal.txt" 90 \
         journalctl -u mdatp --since "24 hours ago" --no-pager --utc
+fi
+
+: >"$OBSERVED_BLOB_HOSTS_FILE"
+for evidence_file in \
+    "${WORK_DIR}/mdatp-connectivity.txt" \
+    "${WORK_DIR}/mdatp-journal.txt"; do
+    if [ -r "$evidence_file" ]; then
+        grep -Eio '[A-Za-z0-9-]+\.blob\.core\.usgovcloudapi\.net' \
+            "$evidence_file" 2>/dev/null || true
+    fi
+done | tr '[:upper:]' '[:lower:]' | sort -u | head -n 20 \
+    >"$OBSERVED_BLOB_HOSTS_FILE"
+
+if [ -s "$OBSERVED_BLOB_HOSTS_FILE" ]; then
+    while IFS= read -r blob_host; do
+        case "$blob_host" in
+            onboardingpckgsusgvprd.blob.core.usgovcloudapi.net)
+                ;;
+            *)
+                test_endpoint "Observed MDE government Blob" "Required" \
+                    "https://${blob_host}/" "$blob_host" "443"
+                ;;
+        esac
+    done <"$OBSERVED_BLOB_HOSTS_FILE"
+else
+    printf 'No concrete government Blob hostname was found in the collected MDE evidence.\n' \
+        >"$OBSERVED_BLOB_HOSTS_FILE"
+    record_warning "No runtime government Blob hostname was found in MDE evidence; only the documented DoD Blob baseline was tested."
 fi
 
 {
@@ -473,6 +522,8 @@ $(cat "$HTML_ROWS_FILE")
 <details><summary>System, network, clock, FIPS, and proxy evidence</summary><pre>$(html_escape_file "${WORK_DIR}/system-network.txt")</pre></details>
 <details><summary>Local firewall rules</summary><pre>$(html_escape_file "${WORK_DIR}/local-firewall.txt")</pre></details>
 <details><summary>Wildcard endpoint notes</summary><pre>$(html_escape_file "${WORK_DIR}/wildcard-endpoints.txt")</pre></details>
+<details open><summary>Live Response transfer notes</summary><pre>$(html_escape_file "$LIVE_RESPONSE_NOTES_FILE")</pre></details>
+<details><summary>Observed government Blob hosts</summary><pre>$(html_escape_file "$OBSERVED_BLOB_HOSTS_FILE")</pre></details>
 </div>
 </body>
 </html>
@@ -488,14 +539,22 @@ if [ ! -s "$ARCHIVE_PATH" ]; then
     exit 4
 fi
 
+if ! cp -- "$REPORT_FILE" "$STANDALONE_REPORT_PATH" || [ ! -s "$STANDALONE_REPORT_PATH" ]; then
+    printf 'ERROR: Unable to create standalone HTML report: %s\n' \
+        "$STANDALONE_REPORT_PATH" >&2
+    exit 5
+fi
+
 rm -rf -- "$WORK_DIR"
 
 printf 'Device: %s\n' "$HOST_NAME"
 printf 'UTC: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 printf 'Required failures: %s\n' "$FAILURES"
 printf 'Conditional warnings: %s\n' "$WARNINGS"
-printf 'Saved: %s\n' "$ARCHIVE_PATH"
-printf 'Retrieve with: getfile "%s"\n' "$ARCHIVE_PATH"
+printf 'HTML report: %s\n' "$STANDALONE_REPORT_PATH"
+printf 'Retrieve HTML: getfile "%s"\n' "$STANDALONE_REPORT_PATH"
+printf 'Evidence archive: %s\n' "$ARCHIVE_PATH"
+printf 'Retrieve archive: getfile "%s"\n' "$ARCHIVE_PATH"
 
 if [ "$FAILURES" -gt 0 ]; then
     exit 10

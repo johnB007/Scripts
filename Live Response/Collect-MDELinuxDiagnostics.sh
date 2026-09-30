@@ -10,7 +10,8 @@ set -u
 set -o pipefail
 umask 077
 
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.1.0"
+MAX_EMBEDDED_FILE_BYTES=$((25 * 1024 * 1024))
 SUPPORT_MATRIX_DATE="2026-09-28"
 SUPPORT_DOC="https://learn.microsoft.com/defender-endpoint/mde-linux-prerequisites#supported-linux-distributions"
 CONNECTIVITY_DOC="https://learn.microsoft.com/defender-endpoint/linux-support-connectivity"
@@ -22,8 +23,10 @@ UTC_STAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
 BUNDLE_NAME="MDELinuxDiagnostics_${SAFE_HOST}_${UTC_STAMP}"
 WORK_DIR="/tmp/${BUNDLE_NAME}"
 ARCHIVE_PATH="/tmp/${BUNDLE_NAME}.tar.gz"
+STANDALONE_REPORT_PATH="/tmp/${BUNDLE_NAME}.html"
 SUMMARY_FILE="${WORK_DIR}/summary.txt"
 REPORT_FILE="${WORK_DIR}/MDE-Linux-Diagnostics-Report.html"
+OMITTED_FILES="${WORK_DIR}/omitted-large-files.txt"
 ERROR_COUNT=0
 
 mkdir -p "$WORK_DIR" || {
@@ -202,6 +205,7 @@ SUPPORT_ASSESSMENT="$(assess_support "$OS_ID" "$OS_VERSION" "$ARCHITECTURE")"
     printf 'Current support source: %s\n' "$SUPPORT_DOC"
     printf 'Connectivity source: %s\n' "$CONNECTIVITY_DOC"
     printf 'Client Analyzer source: %s\n' "$ANALYZER_DOC"
+    printf 'Maximum embedded file size: %s bytes\n' "$MAX_EMBEDDED_FILE_BYTES"
     printf '\nThis script makes no configuration changes and performs no remediation.\n'
     printf 'It creates diagnostic files only under /tmp.\n'
 } >"$SUMMARY_FILE"
@@ -330,10 +334,29 @@ run_capture "Package information" "${WORK_DIR}/packages.txt" sh -c '
     done
 } >"${WORK_DIR}/proxy-environment.txt"
 
+printf 'Files omitted from the retrieval archive because they exceeded %s bytes:\n' \
+    "$MAX_EMBEDDED_FILE_BYTES" >"$OMITTED_FILES"
+find "$WORK_DIR" -type f -size +"${MAX_EMBEDDED_FILE_BYTES}"c -print0 2>/dev/null \
+    | while IFS= read -r -d '' large_file; do
+        large_size="$(stat -c '%s' "$large_file" 2>/dev/null || printf 'unknown')"
+        relative_file="${large_file#"$WORK_DIR"/}"
+        printf '%s bytes\t%s\n' "$large_size" "$relative_file" >>"$OMITTED_FILES"
+        rm -f -- "$large_file"
+    done
+
+OMITTED_COUNT="$(tail -n +2 "$OMITTED_FILES" | wc -l | tr -d ' ')"
+if [ "$OMITTED_COUNT" -eq 0 ]; then
+    printf 'None.\n' >>"$OMITTED_FILES"
+else
+    printf '\nLarge Client Analyzer payloads were omitted to keep Live Response retrieval practical.\n' \
+        >>"$OMITTED_FILES"
+fi
+
 find "$WORK_DIR" -maxdepth 4 -type f -printf '%p\t%s bytes\n' 2>/dev/null \
     | sort >"${WORK_DIR}/file-inventory.txt"
 
 {
+    printf '\nLarge files omitted: %s\n' "$OMITTED_COUNT"
     printf '\nWarnings recorded: %s\n' "$ERROR_COUNT"
     printf 'UTC completed: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 } >>"$SUMMARY_FILE"
@@ -371,7 +394,7 @@ summary { cursor: pointer; font-weight: bold; padding: 0.5rem; }
 <p><strong>Completed UTC:</strong> $(date -u '+%Y-%m-%dT%H:%M:%SZ')</p>
 <p><strong>Result:</strong> <span class="$RESULT_CLASS">$OVERALL_RESULT</span></p>
 <p><strong>Warnings:</strong> $ERROR_COUNT</p>
-<p>The complete Microsoft diagnostic archives remain in this package for support escalation.</p>
+<p>Individual files larger than 25 MiB are omitted and recorded below so the archive remains practical for Live Response retrieval.</p>
 </div>
 <div class="card">
 <h2>Primary findings</h2>
@@ -386,6 +409,7 @@ summary { cursor: pointer; font-weight: bold; padding: 0.5rem; }
 <details><summary>Package information</summary><pre>$(html_escape_file "${WORK_DIR}/packages.txt")</pre></details>
 <details><summary>Proxy environment</summary><pre>$(html_escape_file "${WORK_DIR}/proxy-environment.txt")</pre></details>
 <details><summary>Supported Linux versions</summary><pre>$(html_escape_file "${WORK_DIR}/supported-linux-versions.txt")</pre></details>
+<details open><summary>Omitted large files</summary><pre>$(html_escape_file "$OMITTED_FILES")</pre></details>
 <details><summary>Collected file inventory</summary><pre>$(html_escape_file "${WORK_DIR}/file-inventory.txt")</pre></details>
 </div>
 </body>
@@ -402,11 +426,19 @@ if [ ! -s "$ARCHIVE_PATH" ]; then
     exit 4
 fi
 
+if ! cp -- "$REPORT_FILE" "$STANDALONE_REPORT_PATH" || [ ! -s "$STANDALONE_REPORT_PATH" ]; then
+    printf 'ERROR: Unable to create standalone HTML report: %s\n' \
+        "$STANDALONE_REPORT_PATH" >&2
+    exit 5
+fi
+
 rm -rf -- "$WORK_DIR"
 
 printf 'Device: %s\n' "$HOST_NAME"
 printf 'UTC: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 printf 'Warnings: %s\n' "$ERROR_COUNT"
-printf 'Saved: %s\n' "$ARCHIVE_PATH"
-printf 'Retrieve with: getfile "%s"\n' "$ARCHIVE_PATH"
+printf 'HTML report: %s\n' "$STANDALONE_REPORT_PATH"
+printf 'Retrieve HTML: getfile "%s"\n' "$STANDALONE_REPORT_PATH"
+printf 'Evidence archive: %s\n' "$ARCHIVE_PATH"
+printf 'Retrieve archive: getfile "%s"\n' "$ARCHIVE_PATH"
 exit 0
