@@ -264,7 +264,7 @@ try {
     else {
         Write-Output 'No authentication service communication failures were detected in the retained seven day window.'
     }
-    Write-Output 'If repeated quota stops or communication failures continue, collect the Microsoft Defender for Endpoint client analyzer package and contact Microsoft Support.'
+    Write-Output 'If repeated quota stops or communication failures continue, collect the Microsoft Defender for Endpoint client analyzer package for deeper analysis.'
     exit $exitCode
 }
 catch {

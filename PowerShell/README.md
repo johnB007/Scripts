@@ -75,7 +75,7 @@ Open Windows PowerShell as administrator:
 | `LogCoversWindow` is `False` | The local event log does not retain the entire requested period | Increase event log retention if longer local history is operationally required |
 
 If quota cycling or communication failures continue, collect the Microsoft
-Defender for Endpoint client analyzer package and contact Microsoft Support.
+Defender for Endpoint client analyzer package for deeper analysis.
 Do not delete Cyber folder files, change its permissions, or apply undocumented
 registry settings.
 
