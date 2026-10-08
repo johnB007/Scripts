@@ -25,8 +25,6 @@ The summary labels these values separately:
 - `AssignedDailyUploadQuotaMiB` is the Event 35 daily upload limit.
 - `CurrentCacheUsageMiB` is the current Cyber folder disk footprint when the
   execution context has permission to read it.
-- `CacheMeasurementMethod` identifies direct PowerShell access or the read only
-  administrator backup mode fallback.
 
 The assigned limits are not actual usage. The Cyber folder measurement is a
 point in time disk footprint, not an exact count of unsent events, cloud
