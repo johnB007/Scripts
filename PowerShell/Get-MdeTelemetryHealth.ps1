@@ -154,6 +154,7 @@ try {
     $exitCode = 0
     $cyberFileCount = $null
     $cyberSizeMiB = $null
+    $cyberMeasurementMethod = $null
     $cyberMeasurementError = $null
     try {
         $path = Join-Path $env:ProgramData 'Microsoft\Windows Defender Advanced Threat Protection\Cyber'
@@ -164,12 +165,67 @@ try {
         }
         $cyberFileCount = $files.Count
         $cyberSizeMiB = [math]::Round($bytes / 1MB, 2)
+        $cyberMeasurementMethod = 'Direct PowerShell access'
     }
     catch {
-        $cyberMeasurementError = $_.Exception.Message
-        Write-Warning "Cyber folder measurement unavailable: $cyberMeasurementError"
-        Write-Warning 'SYSTEM access may be required. Do not change permissions or delete sensor files.'
-        $exitCode = 2
+        $directAccessError = $_.Exception.Message
+        try {
+            $robocopyPath = (Get-Command robocopy.exe -ErrorAction Stop).Source
+            $robocopyDestination = Join-Path $env:TEMP (
+                'MdeCyberMeasure_{0}' -f [Guid]::NewGuid().ToString('N')
+            )
+            $robocopyArguments = @(
+                $path
+                $robocopyDestination
+                '/L'
+                '/B'
+                '/BYTES'
+                '/FP'
+                '/NJH'
+                '/NJS'
+                '/NDL'
+                '/NC'
+                '/XX'
+                '/R:0'
+                '/W:0'
+                '/XJ'
+            )
+            $robocopyOutput = @(& $robocopyPath @robocopyArguments 2>&1)
+            $robocopyExitCode = $LASTEXITCODE
+            if ($robocopyExitCode -ge 8) {
+                $robocopyError = @(
+                    $robocopyOutput |
+                        Where-Object { $_ -match 'ERROR|denied|privilege|rights' } |
+                        Select-Object -First 3
+                ) -join ' '
+                throw "Robocopy returned exit code $robocopyExitCode. $robocopyError"
+            }
+
+            $listedFiles = @(
+                $robocopyOutput | ForEach-Object {
+                    if ($_ -match '^\s*(?<Bytes>\d+)\s+(?<Path>[A-Za-z]:\\.+)$') {
+                        [pscustomobject]@{
+                            Bytes = [int64]$Matches.Bytes
+                            Path = $Matches.Path
+                        }
+                    }
+                }
+            )
+            $bytes = 0L
+            foreach ($listedFile in $listedFiles) {
+                $bytes += $listedFile.Bytes
+            }
+            $cyberFileCount = $listedFiles.Count
+            $cyberSizeMiB = [math]::Round($bytes / 1MB, 2)
+            $cyberMeasurementMethod = 'Robocopy list only backup mode'
+            Write-Warning 'Direct Cyber folder access was denied. Measurement succeeded with read only administrator backup mode.'
+        }
+        catch {
+            $cyberMeasurementError = "Direct access failed: $directAccessError Backup mode failed: $($_.Exception.Message)"
+            Write-Warning "Cyber folder measurement unavailable: $cyberMeasurementError"
+            Write-Warning 'The elevated account must have Backup files and directories rights. Do not change Cyber folder permissions or delete sensor files.'
+            $exitCode = 2
+        }
     }
 
     Write-Output "`nTelemetry storage and upload summary:"
@@ -180,6 +236,7 @@ try {
         AssignedDailyUploadQuotaMiB = $assignedDailyUploadQuotaMiB
         CurrentCacheFileCount = $cyberFileCount
         CurrentCacheUsageMiB = $cyberSizeMiB
+        CacheMeasurementMethod = $cyberMeasurementMethod
     } | Format-List
     if ($null -ne $cyberMeasurementError) {
         Write-Output ("Current cache usage was not measured: {0}" -f $cyberMeasurementError)
