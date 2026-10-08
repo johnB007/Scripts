@@ -130,22 +130,31 @@ try {
     $events | Sort-Object TimeCreated -Descending |
         Select-Object -First 12 TimeCreated, Id, Message | Format-List
 
-    Write-Output "`nLatest quota configuration:"
+    Write-Output "`nLatest quota configuration event:"
     $latestQuotaUpdate = $events |
         Where-Object Id -eq 35 |
         Sort-Object TimeCreated -Descending |
         Select-Object -First 1
+    $assignedCacheQuotaMiB = $null
+    $assignedDailyUploadQuotaMiB = $null
     if ($null -eq $latestQuotaUpdate) {
         Write-Output 'No Event 35 quota update was found in the retained seven day window.'
     }
     else {
         $latestQuotaUpdate | Select-Object TimeCreated, Message | Format-List
+        if ($latestQuotaUpdate.Message -match 'Disk quota in MB:\s*(\d+).*daily upload quota in MB:\s*(\d+)') {
+            $assignedCacheQuotaMiB = [int]$Matches[1]
+            $assignedDailyUploadQuotaMiB = [int]$Matches[2]
+        }
     }
 
     Write-Output "`nSense service:"
     Get-Service -Name Sense | Select-Object Name, Status | Format-Table
 
-    Write-Output "`nCurrent Cyber folder footprint:"
+    $exitCode = 0
+    $cyberFileCount = $null
+    $cyberSizeMiB = $null
+    $cyberMeasurementError = $null
     try {
         $path = Join-Path $env:ProgramData 'Microsoft\Windows Defender Advanced Threat Protection\Cyber'
         $files = @(Get-ChildItem -LiteralPath $path -File)
@@ -153,19 +162,32 @@ try {
         foreach ($file in $files) {
             $bytes += $file.Length
         }
-        [pscustomobject]@{
-            PC = $env:COMPUTERNAME
-            CheckedUtc = [datetime]::UtcNow.ToString('o')
-            FileCount = $files.Count
-            SizeMiB = [math]::Round($bytes / 1MB, 2)
-        } | Format-List
+        $cyberFileCount = $files.Count
+        $cyberSizeMiB = [math]::Round($bytes / 1MB, 2)
     }
     catch {
-        Write-Warning "Cyber folder measurement unavailable: $($_.Exception.Message)"
+        $cyberMeasurementError = $_.Exception.Message
+        Write-Warning "Cyber folder measurement unavailable: $cyberMeasurementError"
         Write-Warning 'SYSTEM access may be required. Do not change permissions or delete sensor files.'
-        exit 2
+        $exitCode = 2
     }
-    Write-Output 'SizeMiB is current disk usage, not an exact unsent event count or historical size.'
+
+    Write-Output "`nTelemetry storage and upload summary:"
+    [pscustomobject]@{
+        PC = $env:COMPUTERNAME
+        CheckedUtc = [datetime]::UtcNow.ToString('o')
+        AssignedCacheQuotaMiB = $assignedCacheQuotaMiB
+        AssignedDailyUploadQuotaMiB = $assignedDailyUploadQuotaMiB
+        CurrentCacheFileCount = $cyberFileCount
+        CurrentCacheUsageMiB = $cyberSizeMiB
+    } | Format-List
+    if ($null -ne $cyberMeasurementError) {
+        Write-Output ("Current cache usage was not measured: {0}" -f $cyberMeasurementError)
+    }
+    Write-Output 'AssignedCacheQuotaMiB is the Event 35 local disk limit, not current cache usage.'
+    Write-Output 'AssignedDailyUploadQuotaMiB is the Event 35 upload limit, not the amount collected or uploaded today.'
+    Write-Output 'CurrentCacheUsageMiB is a point in time disk footprint, not an exact unsent event count.'
+    Write-Output 'Exact telemetry bytes collected or uploaded per day are not exposed by this supported local event log interface.'
 
     $quotaStopCount = @($events | Where-Object Id -eq 92).Count
     $authenticationFailureCount = @($events | Where-Object Id -eq 405).Count
@@ -186,7 +208,7 @@ try {
         Write-Output 'No authentication service communication failures were detected in the retained seven day window.'
     }
     Write-Output 'If repeated quota stops or communication failures continue, collect the Microsoft Defender for Endpoint client analyzer package and contact Microsoft Support.'
-    exit 0
+    exit $exitCode
 }
 catch {
     Write-Error "MDE diagnostic collection failed: $($_.Exception.Message)" -ErrorAction Continue
