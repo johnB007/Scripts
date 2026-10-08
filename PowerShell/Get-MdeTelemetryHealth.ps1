@@ -154,7 +154,6 @@ try {
     $exitCode = 0
     $cyberFileCount = $null
     $cyberSizeMiB = $null
-    $cyberMeasurementMethod = $null
     $cyberMeasurementError = $null
     try {
         $path = Join-Path $env:ProgramData 'Microsoft\Windows Defender Advanced Threat Protection\Cyber'
@@ -165,7 +164,6 @@ try {
         }
         $cyberFileCount = $files.Count
         $cyberSizeMiB = [math]::Round($bytes / 1MB, 2)
-        $cyberMeasurementMethod = 'Direct PowerShell access'
     }
     catch {
         $directAccessError = $_.Exception.Message
@@ -217,7 +215,6 @@ try {
             }
             $cyberFileCount = $listedFiles.Count
             $cyberSizeMiB = [math]::Round($bytes / 1MB, 2)
-            $cyberMeasurementMethod = 'Robocopy list only backup mode'
             Write-Warning 'Direct Cyber folder access was denied. Measurement succeeded with read only administrator backup mode.'
         }
         catch {
@@ -236,7 +233,6 @@ try {
         AssignedDailyUploadQuotaMiB = $assignedDailyUploadQuotaMiB
         CurrentCacheFileCount = $cyberFileCount
         CurrentCacheUsageMiB = $cyberSizeMiB
-        CacheMeasurementMethod = $cyberMeasurementMethod
     } | Format-List
     if ($null -ne $cyberMeasurementError) {
         Write-Output ("Current cache usage was not measured: {0}" -f $cyberMeasurementError)
