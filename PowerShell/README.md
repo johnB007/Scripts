@@ -1,4 +1,78 @@
-PS scripts
+# PowerShell scripts
+
+PowerShell utilities for Microsoft Defender for Endpoint administration,
+diagnostics, and security operations.
+
+## Get-MdeTelemetryHealth.ps1
+
+`Get-MdeTelemetryHealth.ps1` is a read only troubleshooting script for Windows
+devices onboarded to Microsoft Defender for Endpoint. It helps identify sensor
+telemetry quota cycling and authentication service communication failures.
+
+### What it reports
+
+- Cumulative Event 92 quota stops and Event 93 resumes for 1, 3, 5, and 7 days.
+- Daily quota stop and resume totals.
+- Event 405 authentication service communication failures.
+- The latest Event 35 disk quota and daily upload quota configuration.
+- Sense service status.
+- Current file count and disk footprint of the local sensor Cyber folder.
+- Troubleshooting guidance based on the collected events.
+
+The Cyber folder measurement is current disk usage. It is not an exact count
+of unsent events, cloud ingestion latency, or historical queue size.
+
+### Requirements
+
+- A Windows device onboarded to Microsoft Defender for Endpoint.
+- Windows PowerShell 5.1 or later.
+- Administrator or SYSTEM execution context.
+- An enabled `Microsoft-Windows-SENSE/Operational` event log.
+
+The script uses built in Windows cmdlets, requires no additional modules, and
+does not change services, permissions, protection settings, event logs, or
+sensor files.
+
+### Run locally
+
+Open Windows PowerShell as administrator:
+
+```powershell
+.\Get-MdeTelemetryHealth.ps1
+```
+
+### Run with Microsoft Defender for Endpoint Live Response
+
+Upload the script to the Live Response library, connect to the device, and run:
+
+```text
+run Get-MdeTelemetryHealth.ps1
+```
+
+### Interpret common results
+
+| Result | Meaning | Recommended checks |
+|---|---|---|
+| Repeated Events 92 and 93 | Sensor telemetry repeatedly stops and resumes because a communication quota is exceeded | Review Event 35 quota values, free disk space, sensor connectivity, and recent workload changes |
+| Event 92 without a newer Event 93 | Telemetry transmission might currently be stopped | Confirm connectivity and collect a fresh diagnostic result |
+| Repeated Event 405 | The sensor cannot reliably reach the authentication service | Validate service URLs, DNS, proxy settings, TLS inspection, and outbound connectivity |
+| Cyber folder near the Event 35 disk quota | The local sensor queue is using most of its assigned disk allowance | Investigate upload connectivity and quota events; do not modify the folder |
+| `LogCoversWindow` is `False` | The local event log does not retain the entire requested period | Increase event log retention if longer local history is operationally required |
+
+If quota cycling or communication failures continue, collect the Microsoft
+Defender for Endpoint client analyzer package and contact Microsoft Support.
+Do not delete Cyber folder files, change its permissions, or apply undocumented
+registry settings.
+
+### Exit codes
+
+| Code | Meaning |
+|---:|---|
+| `0` | Collection completed |
+| `1` | Required diagnostic collection failed |
+| `2` | Core results completed, but Cyber folder measurement was unavailable |
+
+## Disclaimer
 
 <#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                               
