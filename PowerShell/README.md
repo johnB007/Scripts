@@ -33,20 +33,19 @@ The script uses built in Windows cmdlets, requires no additional modules, and
 does not change services, permissions, protection settings, event logs, or
 sensor files.
 
+### Execution classification
+
+This is a **Windows PowerShell diagnostic script**. It has been validated in an
+elevated local PowerShell session and through Azure Arc Run Command running as
+SYSTEM. It has **not** been validated in a Microsoft Defender for Endpoint Live
+Response session and should not be represented as Live Response tested.
+
 ### Run locally
 
 Open Windows PowerShell as administrator:
 
 ```powershell
 .\Get-MdeTelemetryHealth.ps1
-```
-
-### Run with Microsoft Defender for Endpoint Live Response
-
-Upload the script to the Live Response library, connect to the device, and run:
-
-```text
-run Get-MdeTelemetryHealth.ps1
 ```
 
 ### Interpret common results
