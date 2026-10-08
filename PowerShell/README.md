@@ -25,6 +25,8 @@ The summary labels these values separately:
 - `AssignedDailyUploadQuotaMiB` is the Event 35 daily upload limit.
 - `CurrentCacheUsageMiB` is the current Cyber folder disk footprint when the
   execution context has permission to read it.
+- `CacheMeasurementMethod` identifies direct PowerShell access or the read only
+  administrator backup mode fallback.
 
 The assigned limits are not actual usage. The Cyber folder measurement is a
 point in time disk footprint, not an exact count of unsent events, cloud
@@ -39,9 +41,12 @@ interface.
 - Administrator or SYSTEM execution context.
 - An enabled `Microsoft-Windows-SENSE/Operational` event log.
 
-The script uses built in Windows cmdlets, requires no additional modules, and
-does not change services, permissions, protection settings, event logs, or
-sensor files.
+The script uses built in Windows cmdlets and `robocopy.exe`, requires no
+additional modules, and does not change services, permissions, protection
+settings, event logs, or sensor files. If direct Cyber folder access is denied,
+the script retries with `robocopy /L /B`. The `/L` switch lists files without
+copying, deleting, or changing them, while `/B` uses the elevated
+administrator token's backup privilege.
 
 ### Execution classification
 
@@ -66,7 +71,7 @@ Open Windows PowerShell as administrator:
 | Event 92 without a newer Event 93 | Telemetry transmission might currently be stopped | Confirm connectivity and collect a fresh diagnostic result |
 | Repeated Event 405 | The sensor cannot reliably reach the authentication service | Validate service URLs, DNS, proxy settings, TLS inspection, and outbound connectivity |
 | Cyber folder near the Event 35 disk quota | The local sensor queue is using most of its assigned disk allowance | Investigate upload connectivity and quota events; do not modify the folder |
-| Cyber folder access denied | Administrator access is insufficient to read the protected folder on that device | Run through an approved SYSTEM execution channel such as Azure Arc Run Command; do not change folder permissions |
+| Cyber folder access denied | Direct PowerShell enumeration cannot read the protected folder | The script automatically retries with read only administrator backup mode; verify the account retains its Backup files and directories user right if that fallback also fails |
 | `LogCoversWindow` is `False` | The local event log does not retain the entire requested period | Increase event log retention if longer local history is operationally required |
 
 If quota cycling or communication failures continue, collect the Microsoft
