@@ -13,9 +13,9 @@
     * The Microsoft Defender for Endpoint Sense service status.
     * The current file count and disk footprint of the sensor Cyber folder.
 
-    Run the script as an administrator, through Microsoft Defender for Endpoint
-    Live Response, or through Azure Arc Run Command. It uses only built in
-    Windows PowerShell 5.1 cmdlets and does not require internet access.
+    Run the script in an elevated Windows PowerShell session or through Azure
+    Arc Run Command. It uses only built in Windows PowerShell 5.1 cmdlets and
+    does not require internet access.
 
     The Cyber folder measurement is current disk usage. It is not an exact
     count of unsent events, cloud ingestion latency, or historical queue size.
@@ -29,6 +29,11 @@
     * Windows device onboarded to Microsoft Defender for Endpoint.
     * Administrator or SYSTEM execution context.
     * Enabled Microsoft-Windows-SENSE/Operational event log.
+
+    Execution classification:
+    * Windows PowerShell diagnostic script.
+    * Validated locally and through Azure Arc Run Command as SYSTEM.
+    * Not validated in Microsoft Defender for Endpoint Live Response.
 
     Event interpretation:
     * 35: Communication quota configuration was updated.
@@ -44,11 +49,6 @@
     PS> .\Get-MdeTelemetryHealth.ps1
 
     Runs the script in an elevated PowerShell session on the local device.
-.EXAMPLE
-    run Get-MdeTelemetryHealth.ps1
-
-    Runs the uploaded script from a Microsoft Defender for Endpoint Live
-    Response session.
 #>
 [CmdletBinding()]
 param()
