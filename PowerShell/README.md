@@ -19,8 +19,18 @@ telemetry quota cycling and authentication service communication failures.
 - Current file count and disk footprint of the local sensor Cyber folder.
 - Troubleshooting guidance based on the collected events.
 
-The Cyber folder measurement is current disk usage. It is not an exact count
-of unsent events, cloud ingestion latency, or historical queue size.
+The summary labels these values separately:
+
+- `AssignedCacheQuotaMiB` is the Event 35 local disk limit.
+- `AssignedDailyUploadQuotaMiB` is the Event 35 daily upload limit.
+- `CurrentCacheUsageMiB` is the current Cyber folder disk footprint when the
+  execution context has permission to read it.
+
+The assigned limits are not actual usage. The Cyber folder measurement is a
+point in time disk footprint, not an exact count of unsent events, cloud
+ingestion latency, or historical queue size. Exact telemetry bytes collected
+or uploaded per day are not exposed by the supported local SENSE event log
+interface.
 
 ### Requirements
 
@@ -56,6 +66,7 @@ Open Windows PowerShell as administrator:
 | Event 92 without a newer Event 93 | Telemetry transmission might currently be stopped | Confirm connectivity and collect a fresh diagnostic result |
 | Repeated Event 405 | The sensor cannot reliably reach the authentication service | Validate service URLs, DNS, proxy settings, TLS inspection, and outbound connectivity |
 | Cyber folder near the Event 35 disk quota | The local sensor queue is using most of its assigned disk allowance | Investigate upload connectivity and quota events; do not modify the folder |
+| Cyber folder access denied | Administrator access is insufficient to read the protected folder on that device | Run through an approved SYSTEM execution channel such as Azure Arc Run Command; do not change folder permissions |
 | `LogCoversWindow` is `False` | The local event log does not retain the entire requested period | Increase event log retention if longer local history is operationally required |
 
 If quota cycling or communication failures continue, collect the Microsoft
