@@ -46,7 +46,7 @@
     * 1: Required diagnostic collection failed.
     * 2: Core results completed, but Cyber folder measurement was unavailable.
 .EXAMPLE
-    PS> .\Get-MdeTelemetryHealth.ps1
+    PS> .\Get-MdeCyberTelemetryHealth.ps1
 
     Runs the script in an elevated PowerShell session on the local device.
 #>
