@@ -3,24 +3,23 @@
     Creates one standalone HTML report that validates Azure Arc and MDE DoD readiness on Windows Server.
 
 .DESCRIPTION
-    Validates outbound connectivity from a Windows Server to the URLs Microsoft
-    documents as required for:
-      - Azure Arc enabled servers onboarding (Azure Government)
-      - Microsoft Defender for Endpoint (DoD), streamlined and standard connectivity
-      - Defender for Servers auto onboarding of MDE via Arc (MDE.Windows extension)
+    Read only Windows Server analyzer for Azure Arc onboarding in Azure
+    Government and Defender for Servers MDE onboarding in DoD.
 
-    It also collects the local evidence behind most onboarding failures:
-    Azure Connected Machine agent status, the native azcmagent check, Arc
-    extension status and logs, MDE onboarding state and SENSE errors, Arc and
-    MDE proxy settings, TLS 1.2 settings, trusted root certificates, automatic
-    root update policy, clock skew, TLS inspection, and government Blob hosts
-    observed in local Arc logs.
+    Start to finish, it:
+      1. Collects OS, TLS, certificate, clock, proxy, service, and onboarding state.
+      2. Tests fixed and regional Arc endpoints through the Arc agent network path.
+      3. Runs and records native azcmagent show and azcmagent check results.
+      4. Reviews Arc extensions, MDE.Windows status and logs, and SENSE events.
+      5. Discovers the dynamic Arc extension Blob account from deployment
+         configuration, status, or failure evidence and tests that exact host.
+      6. Tests MDE DoD streamlined or standard endpoints and certificate services.
+      7. Writes one standalone HTML report to the first writable approved location.
 
-    Each endpoint is tested once through the proxy path used by the agent that
-    owns it. Wildcard firewall rules are reported separately with the concrete
-    hosts tested beneath each rule.
-
-    Read only. The only artifact is one standalone HTML file.
+    Run once before Arc onboarding to validate fixed prerequisites. Run again
+    after MDE.Windows is attempted so Azure has assigned a dynamic Blob account
+    that can be discovered and tested. A wildcard is never reported as fully
+    proven by one host; service tags remain a firewall configuration review.
 
 .PARAMETER ArcLocation
     Azure Government region for the Arc checks. When this parameter is not
@@ -38,13 +37,18 @@
     Timeout for each network probe.
 
 .PARAMETER OutputDirectory
-    Directory for the HTML report.
+    Preferred directory for the HTML report. If it is unavailable, the script
+    automatically tries persistent ProgramData, the current user's Documents
+    folder, Windows Temp, the process Temp folder, and the current directory.
 
 .EXAMPLE
     run Test-MdeArcDoDConnectivity.ps1
 
 .EXAMPLE
-    run Test-MdeArcDoDConnectivity.ps1 -parameters "-ArcLocation usgovarizona -MdeConnectivity Streamlined"
+    run Test-MdeArcDoDConnectivity.ps1 -parameters "-ArcLocation usgovvirginia -MdeConnectivity Standard"
+
+    Tests Azure Arc against the US Gov Virginia regional endpoints and forces
+    the full standard MDE DoD endpoint list instead of streamlined connectivity.
 #>
 [CmdletBinding()]
 param(
@@ -59,8 +63,7 @@ param(
     [ValidateRange(2, 30)]
     [int]$TimeoutSeconds = 5,
 
-    [ValidateNotNullOrEmpty()]
-    [string]$OutputDirectory = $env:TEMP
+    [string]$OutputDirectory = ''
 )
 
 Set-StrictMode -Version Latest
@@ -74,7 +77,8 @@ $scriptVersion = '2.0.0'
 $startedUtc = [DateTime]::UtcNow
 $deviceName = if ([string]::IsNullOrWhiteSpace($env:COMPUTERNAME)) { 'UnknownDevice' } else { $env:COMPUTERNAME }
 $safeDeviceName = $deviceName -replace '[^A-Za-z0-9._-]', '_'
-$reportPath = Join-Path $OutputDirectory ('MDE_Arc_DoD_Connectivity_{0}_{1}.html' -f $safeDeviceName, $startedUtc.ToString('yyyyMMddTHHmmssZ'))
+$reportFileName = 'MDE_Arc_DoD_Connectivity_{0}_{1}.html' -f $safeDeviceName, $startedUtc.ToString('yyyyMMddTHHmmssZ')
+$reportPath = ''
 
 $sources = [ordered]@{
     'Azure Arc network requirements'              = 'https://learn.microsoft.com/azure/azure-arc/servers/network-requirements'
@@ -682,7 +686,8 @@ $effectiveMdeMode = if ($MdeConnectivity -ne 'Auto') { $MdeConnectivity } elseif
 $standardLevel = if ($effectiveMdeMode -eq 'Streamlined') { 'Conditional' } else { 'Required' }
 $streamlinedLevel = if ($effectiveMdeMode -eq 'Standard') { 'Conditional' } else { 'Required' }
 
-# Arc logs reveal the concrete government Blob accounts used for extension downloads.
+# Arc logs, extension settings, and failed deployment state reveal the dynamic
+# government Blob account selected for an extension package.
 $arcLogFiles = New-Object System.Collections.Generic.List[string]
 foreach ($candidate in @(
         (Join-Path $env:ProgramData 'AzureConnectedMachineAgent\Log\himds.log'),
@@ -692,16 +697,42 @@ foreach ($candidate in @(
     if (Test-Path -LiteralPath $candidate -PathType Leaf) { $arcLogFiles.Add($candidate) }
 }
 $extensionLogRoot = Join-Path $env:ProgramData 'GuestConfig\extension_logs'
-if (Test-Path -LiteralPath $extensionLogRoot -PathType Container) {
-    Get-ChildItem -LiteralPath $extensionLogRoot -Recurse -Depth 2 -File -Filter '*.log' -ErrorAction SilentlyContinue |
+$arcDiscoveryRoots = @(
+    (Join-Path $env:ProgramData 'GuestConfig\ext_mgr_logs'),
+    $extensionLogRoot,
+    (Join-Path $env:ProgramData 'GuestConfig\extension_configs'),
+    (Join-Path $env:ProgramData 'GuestConfig\downloads'),
+    (Join-Path $env:SystemDrive 'Packages\Plugins\Microsoft.Azure.AzureDefenderForServers.MDE.Windows')
+)
+foreach ($discoveryRoot in $arcDiscoveryRoots) {
+    if (-not (Test-Path -LiteralPath $discoveryRoot -PathType Container)) { continue }
+    Get-ChildItem -LiteralPath $discoveryRoot -Recurse -Depth 4 -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Length -le 5MB -and
+            $_.Extension -in @('.log', '.json', '.settings', '.status', '.txt')
+        } |
         Sort-Object LastWriteTime -Descending |
-        Select-Object -First 15 |
-        ForEach-Object { $arcLogFiles.Add($_.FullName) }
+        Select-Object -First 75 |
+        ForEach-Object {
+            if (-not $arcLogFiles.Contains($_.FullName)) { $arcLogFiles.Add($_.FullName) }
+        }
 }
 $arcLogTails = [ordered]@{}
 foreach ($file in $arcLogFiles) { $arcLogTails[$file] = Get-FileTail -Path $file -MaxLines 4000 }
 $blobPattern = '(?i)\b[a-z0-9]{3,24}\.blob\.core\.usgovcloudapi\.net\b'
-$observedBlobHosts = @(Get-ObservedHostName -Text ([string[]]@($arcLogTails.Values)) -Pattern $blobPattern -Max 15)
+$blobDiscovery = [ordered]@{}
+foreach ($file in $arcLogTails.Keys) {
+    foreach ($match in [regex]::Matches($arcLogTails[$file], $blobPattern)) {
+        $blobHost = $match.Value.ToLowerInvariant()
+        if (-not $blobDiscovery.Contains($blobHost)) {
+            $blobDiscovery[$blobHost] = New-Object System.Collections.Generic.List[string]
+        }
+        if (-not $blobDiscovery[$blobHost].Contains($file)) {
+            $blobDiscovery[$blobHost].Add($file)
+        }
+    }
+}
+$observedBlobHosts = @($blobDiscovery.Keys | Select-Object -First 15)
 
 #endregion
 
@@ -723,7 +754,8 @@ if ($hisRegionCodes.ContainsKey($effectiveLocation)) {
 Add-Endpoint -HostName 'agentserviceapi.guestconfiguration.azure.us' -Rule '*.guestconfiguration.azure.us' -Area $arcSource -UsedBy 'Azure Arc' -Purpose 'Extension management and guest configuration service.' -Level 'Required' -Route 'Arc'
 Add-Endpoint -HostName ('{0}-gas.guestconfiguration.azure.us' -f $effectiveLocation) -Rule '*.guestconfiguration.azure.us' -Area $arcSource -UsedBy 'Azure Arc' -Purpose ('Regional guest assignment service that delivers extensions such as MDE.Windows in {0}.' -f $effectiveLocation) -Level 'Required' -Route 'Arc'
 foreach ($blobHost in $observedBlobHosts) {
-    Add-Endpoint -HostName $blobHost -Rule '*.blob.core.usgovcloudapi.net' -Area $arcSource -UsedBy 'Azure Arc extensions' -Purpose 'Extension package storage observed in local Arc logs.' -Level 'Required' -Route 'Arc'
+    $sourceNames = @($blobDiscovery[$blobHost] | ForEach-Object { Split-Path -Leaf $_ } | Select-Object -Unique -First 3)
+    Add-Endpoint -HostName $blobHost -Rule '*.blob.core.usgovcloudapi.net' -Area $arcSource -UsedBy 'Azure Arc extensions' -Purpose ('Dynamic extension package storage discovered in {0}.' -f ($sourceNames -join ', ')) -Level 'Required' -Route 'Arc'
 }
 Add-Endpoint -HostName 'www.microsoft.com' -Port 443 -Path '/pkiops/certs' -Rule 'www.microsoft.com/pkiops/certs' -Area $arcSource -UsedBy 'Azure Arc ESU' -Purpose 'Intermediate certificates for Extended Security Updates enabled by Azure Arc.' -Level 'Conditional' -Route 'Arc'
 Add-Endpoint -HostName 'dc.applicationinsights.us' -Rule 'dc.applicationinsights.us' -Area $arcSource -UsedBy 'Azure Arc' -Purpose 'Agent telemetry for agent versions earlier than 1.24 only.' -Level 'Optional' -Route 'Arc'
@@ -790,17 +822,24 @@ function Get-EndpointResult {
 #region Wildcard rule coverage
 
 $wildcardRules = @(
-    [pscustomobject]@{ Rule = '*.endpoint.security.microsoft.us:443'; Suffix = '.endpoint.security.microsoft.us'; Level = $streamlinedLevel; UsedBy = 'MDE streamlined'; Note = 'Consolidated MDE service URL. Exclude from TLS inspection. Hostnames are assigned at runtime, so validate with MDE Client Analyzer using the DoD onboarding package when no observed host was tested.' }
-    [pscustomobject]@{ Rule = '*.his.arc.azure.us:443'; Suffix = '.his.arc.azure.us'; Level = 'Required'; UsedBy = 'Azure Arc'; Note = 'Hybrid identity and metadata services. Private Link capable.' }
-    [pscustomobject]@{ Rule = '*.guestconfiguration.azure.us:443'; Suffix = '.guestconfiguration.azure.us'; Level = 'Required'; UsedBy = 'Azure Arc'; Note = 'Extension management and guest configuration. Private Link capable.' }
-    [pscustomobject]@{ Rule = '*.blob.core.usgovcloudapi.net:443'; Suffix = '.blob.core.usgovcloudapi.net'; Level = 'Required'; UsedBy = 'Azure Arc extensions; MDE storage; Live Response file transfer'; Note = 'Required unless Arc Private Link is used. Passing specific accounts does not prove the full wildcard is allowed.' }
-    [pscustomobject]@{ Rule = '*.wns.windows.com:443'; Suffix = '.wns.windows.com'; Level = 'Required'; UsedBy = 'MDE Live Response'; Note = 'Live Response notifications. Direct connection or proxy bypass required.' }
-    [pscustomobject]@{ Rule = ('*.{0}.arcdataservices.azure.us:443' -f $effectiveLocation); Suffix = ('.{0}.arcdataservices.azure.us' -f $effectiveLocation); Level = 'Conditional'; UsedBy = 'SQL Server enabled by Azure Arc'; Note = 'Only when the SQL Server extension is used. TLS 1.2 or 1.3 only.' }
-    [pscustomobject]@{ Rule = '*.update.microsoft.com; *.delivery.mp.microsoft.com; *.windowsupdate.com; *.download.windowsupdate.com; *.download.microsoft.com; *.definitionupdates.microsoft.com'; Suffix = '.delivery.mp.microsoft.com'; Level = 'Optional'; UsedBy = 'Defender Antivirus updates'; Note = 'Optional when WSUS, Configuration Manager, or a file share supplies updates.' }
+    [pscustomobject]@{ Rule = '*.endpoint.security.microsoft.us:443'; Suffix = '.endpoint.security.microsoft.us'; UsedByPattern = 'MDE'; Level = $streamlinedLevel; UsedBy = 'MDE streamlined'; Note = 'Consolidated MDE service URL. Exclude from TLS inspection. Hostnames are assigned at runtime, so validate with MDE Client Analyzer using the DoD onboarding package when no observed host was tested.' }
+    [pscustomobject]@{ Rule = '*.his.arc.azure.us:443'; Suffix = '.his.arc.azure.us'; UsedByPattern = 'Azure Arc'; Level = 'Required'; UsedBy = 'Azure Arc'; Note = 'Hybrid identity and metadata services. Private Link capable.' }
+    [pscustomobject]@{ Rule = '*.guestconfiguration.azure.us:443'; Suffix = '.guestconfiguration.azure.us'; UsedByPattern = 'Azure Arc'; Level = 'Required'; UsedBy = 'Azure Arc'; Note = 'Extension management and guest configuration. Private Link capable.' }
+    [pscustomobject]@{ Rule = '*.blob.core.usgovcloudapi.net:443'; Suffix = '.blob.core.usgovcloudapi.net'; UsedByPattern = 'Azure Arc extensions'; Level = 'Required'; UsedBy = 'Azure Arc extensions'; Note = 'The assigned account is dynamic. The script searches Arc logs, extension configuration, runtime settings, status, and failed deployment evidence for the exact hostname, then tests it. If no deployment has exposed an account yet, this remains REVIEW. Trigger the MDE.Windows deployment and rerun. Passing an MDE Blob account does not prove Arc extension storage.' }
+    [pscustomobject]@{ Rule = '*.blob.core.usgovcloudapi.net:443'; Suffix = '.blob.core.usgovcloudapi.net'; UsedByPattern = 'MDE'; Level = 'Required'; UsedBy = 'MDE storage and Live Response file transfer'; Note = 'The report tests documented DoD onboarding, AutoIR, and sample storage accounts. A successful anonymous HTTP 400 response proves DNS, routing, proxy, TLS, and Azure Storage reachability, but not SAS authorization or every account under the wildcard.' }
+    [pscustomobject]@{ Rule = '*.wns.windows.com:443'; Suffix = '.wns.windows.com'; UsedByPattern = 'MDE'; Level = 'Required'; UsedBy = 'MDE Live Response'; Note = 'Live Response notifications. Direct connection or proxy bypass required.' }
+    [pscustomobject]@{ Rule = ('*.{0}.arcdataservices.azure.us:443' -f $effectiveLocation); Suffix = ('.{0}.arcdataservices.azure.us' -f $effectiveLocation); UsedByPattern = 'SQL Server'; Level = 'Conditional'; UsedBy = 'SQL Server enabled by Azure Arc'; Note = 'Only when the SQL Server extension is used. TLS 1.2 or 1.3 only.' }
+    [pscustomobject]@{ Rule = '*.update.microsoft.com; *.delivery.mp.microsoft.com; *.windowsupdate.com; *.download.windowsupdate.com; *.download.microsoft.com; *.definitionupdates.microsoft.com'; Suffix = '.delivery.mp.microsoft.com'; UsedByPattern = 'Defender Antivirus'; Level = 'Optional'; UsedBy = 'Defender Antivirus updates'; Note = 'Optional when WSUS, Configuration Manager, or a file share supplies updates.' }
 )
 
 $wildcardResults = foreach ($wildcard in $wildcardRules) {
-    $covered = @($endpointResults | Where-Object { $_.HostName.EndsWith($wildcard.Suffix) })
+    $covered = @(
+        $endpointResults |
+            Where-Object {
+                $_.HostName.EndsWith($wildcard.Suffix) -and
+                $_.UsedBy -match $wildcard.UsedByPattern
+            }
+    )
     $failed = @($covered | Where-Object { $_.Status -eq 'FAIL' })
     $warned = @($covered | Where-Object { $_.Status -eq 'WARN' })
     if ($covered.Count -eq 0) {
@@ -1189,7 +1228,20 @@ foreach ($file in $arcLogTails.Keys) {
         Add-Evidence -Title ('Error lines from {0}' -f $file) -Text (Hide-Credential -Text (Select-ErrorLine -Text $arcLogTails[$file] -MaxLines 40))
     }
 }
-Add-Evidence -Title 'Government Blob hosts observed in Arc logs' -Text $(if ($observedBlobHosts.Count -gt 0) { $observedBlobHosts -join [Environment]::NewLine } else { 'None observed. Only the wildcard rule can be reviewed for Arc extension storage.' })
+$blobEvidenceText = if ($observedBlobHosts.Count -gt 0) {
+    @(
+        foreach ($blobHost in $observedBlobHosts) {
+            '{0}' -f $blobHost
+            foreach ($sourcePath in $blobDiscovery[$blobHost]) {
+                '  discovered in: {0}' -f $sourcePath
+            }
+        }
+    ) -join [Environment]::NewLine
+}
+else {
+    'No dynamic Arc extension Blob hostname was found. Start or retry the MDE.Windows extension deployment, then rerun this report. The failed attempt normally records the assigned storage hostname even when the download is blocked.'
+}
+Add-Evidence -Title 'Dynamic Arc extension Blob discovery' -Text $blobEvidenceText -Open:($observedBlobHosts.Count -eq 0)
 Add-Evidence -Title 'MDE hosts observed in onboarding data and SENSE events' -Text $(if ($observedMdeHosts.Count -gt 0) { $observedMdeHosts -join [Environment]::NewLine } else { 'None observed.' })
 Add-Evidence -Title 'Defender Antivirus status' -Text $mpStatusText
 
@@ -1365,6 +1417,7 @@ $senseHtml
 <li>When filtering Azure Government by IP address, also allow the public cloud <code>AzureArcInfrastructure</code> ranges. Never allow only the address returned by one DNS lookup.</li>
 <li>Do not inspect, intercept, or proxy authenticate <code>*.endpoint.security.microsoft.us</code> or the MDE standard endpoints. MDE runs as SYSTEM and cannot answer proxy authentication.</li>
 <li>Live Response needs <code>*.wns.windows.com</code>, <code>login.live.com</code>, and <code>login.microsoftonline.us</code> with a direct connection or proxy bypass, and file transfer uses government Blob storage.</li>
+<li>The Azure Arc extension Blob account is assigned dynamically. Before an extension attempt, no analyzer can know the exact account. Start or retry the <code>MDE.Windows</code> extension deployment, then rerun this report; it discovers the assigned account from Arc configuration, status, and failure logs and tests that exact hostname.</li>
 <li>Allow the HTTP port 80 certificate AIA, CRL, and OCSP hosts without inspection so Windows can validate Azure Government certificates.</li>
 <li>For MDE streamlined connectivity, run MDE Client Analyzer with <code>-o</code> and the DoD onboarding package to validate the runtime assigned hosts.</li>
 <li>With Azure Arc Private Link, rerun the native check with <code>--enable-pls-check</code> and confirm the Private Link capable endpoints resolve to private addresses.</li>
@@ -1387,14 +1440,41 @@ $sourceHtml
 </html>
 "@
 
-try {
-    if (-not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
-        New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
+$reportDirectories = New-Object System.Collections.Generic.List[string]
+foreach ($candidateDirectory in @(
+        $OutputDirectory,
+        (Join-Path $env:ProgramData 'Microsoft\MDEArcConnectivityReports'),
+        ([Environment]::GetFolderPath('MyDocuments')),
+        (Join-Path $env:WINDIR 'Temp'),
+        $env:TEMP,
+        (Get-Location).Path)) {
+    if (
+        -not [string]::IsNullOrWhiteSpace($candidateDirectory) -and
+        -not $reportDirectories.Contains($candidateDirectory)
+    ) {
+        $reportDirectories.Add($candidateDirectory)
     }
-    [System.IO.File]::WriteAllText($reportPath, $html, (New-Object System.Text.UTF8Encoding($false)))
 }
-catch {
-    Write-Error ('Unable to save the HTML report: {0}' -f $_.Exception.Message)
+
+$saveErrors = New-Object System.Collections.Generic.List[string]
+foreach ($candidateDirectory in $reportDirectories) {
+    $candidatePath = Join-Path $candidateDirectory $reportFileName
+    try {
+        if (-not (Test-Path -LiteralPath $candidateDirectory -PathType Container)) {
+            New-Item -Path $candidateDirectory -ItemType Directory -Force | Out-Null
+        }
+        [System.IO.File]::WriteAllText($candidatePath, $html, (New-Object System.Text.UTF8Encoding($false)))
+        $reportPath = $candidatePath
+        break
+    }
+    catch {
+        $saveErrors.Add(('{0}: {1}' -f $candidateDirectory, (Get-InnermostMessage -Exception $_.Exception)))
+        Remove-Item -LiteralPath $candidatePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($reportPath)) {
+    Write-Error ('Unable to save the HTML report in any approved location. {0}' -f ($saveErrors -join ' | '))
     exit 1
 }
 
