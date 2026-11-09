@@ -305,6 +305,71 @@ try {
     Assert-True (-not (Test-Path (Join-Path $tempRoot 'neverCreated'))) 'Preflight has no output side effect'
     Assert-Throws { & $scriptPath -TenantId $tenant -OutputPath $tempRoot } 'Actual entrypoint existing output'
 
+    # Exercise bounded startup separately from authentication and portal recovery.
+    & {
+        $script:startupProbeCount = 0
+        $script:startupProbeMode = 'ready'
+        function Invoke-RestMethod {
+            [CmdletBinding()]
+            param($Uri, [int]$TimeoutSec)
+            $script:startupProbeCount++
+            Assert-True ($Uri -ceq 'http://127.0.0.1:12345/json/list') 'Startup probes only selected loopback port'
+            Assert-True ($TimeoutSec -ge 1 -and $TimeoutSec -le 2) 'Startup request has bounded timeout'
+            Assert-True ($PSBoundParameters.ContainsKey('Verbose') -and -not $PSBoundParameters['Verbose']) 'Repetitive WebRequest verbose output disabled'
+            Assert-True ($PSBoundParameters['ErrorAction'] -eq 'Stop') 'Startup HTTP failures terminate each probe'
+            if ($script:startupProbeMode -eq 'failure') { throw 'SYNTHETIC_SECRET_NOT_FOR_LOGS' }
+            if ($script:startupProbeMode -eq 'emptyThenReady' -and $script:startupProbeCount -eq 1) { return @() }
+            if ($script:startupProbeMode -eq 'empty') { return @([pscustomobject]@{ type = 'worker' }) }
+            @([pscustomobject]@{ type = 'page'; id = 'startup-page' })
+        }
+        $running = [pscustomobject]@{ Id = -1; HasExited = $false }
+        $exited = [pscustomobject]@{ Id = -2; HasExited = $true; ExitCode = 17 }
+        $ready = @(Wait-EdgeDevToolsTargets -Port 12345 -Process $running -TimeoutSeconds 1)
+        Assert-True ($ready.Count -eq 1 -and $ready[0].id -ceq 'startup-page') 'Running Edge endpoint accepted'
+        $ready = @(Wait-EdgeDevToolsTargets -Port 12345 -Process $exited -TimeoutSeconds 1)
+        Assert-True ($ready.Count -eq 1) 'Launcher handoff exit alone does not reject healthy endpoint'
+        $script:startupProbeMode = 'emptyThenReady'; $script:startupProbeCount = 0
+        $ready = @(Wait-EdgeDevToolsTargets -Port 12345 -Process $running -TimeoutSeconds 2)
+        Assert-True ($ready.Count -eq 1 -and $script:startupProbeCount -eq 2) 'Endpoint without page waits for page creation'
+        foreach ($fixture in @(
+            @{ process = $running; mode = 'failure'; state = 'Running' },
+            @{ process = $exited; mode = 'failure'; state = 'Exited (exit code 17)' },
+            @{ process = $running; mode = 'empty'; state = 'Running' }
+        )) {
+            $script:startupProbeMode = $fixture.mode
+            $failure = $null; $elapsed = [Diagnostics.Stopwatch]::StartNew()
+            try { Wait-EdgeDevToolsTargets -Port 12345 -Process $fixture.process -TimeoutSeconds 1 | Out-Null }
+            catch { $failure = $_ }
+            Assert-True ($null -ne $failure -and $elapsed.Elapsed.TotalSeconds -lt 4) 'Unavailable startup stops within bounded retry budget'
+            Assert-True ($failure.Exception.Data['EdgeLauncherState'] -ceq $fixture.state -and
+                $failure.Exception.Data['EdgeStartupPort'] -eq 12345) 'Startup failure reports process state and selected port'
+            Assert-True ($failure.Exception.Message -match 'before portal sign-in' -and
+                $failure.Exception.Message -match 'normal PowerShell' -and
+                $failure.Exception.Message -match 'ProfilePath' -and
+                $failure.Exception.Message -notmatch 'SYNTHETIC_SECRET') 'Startup failure gives safe next action without raw exception data'
+            if ($fixture.mode -eq 'empty') {
+                Assert-True ($failure.Exception.Data['EdgeStartupLastProbe'] -ceq 'EndpointAnsweredWithoutPage') 'No page distinguished from failed HTTP request'
+            }
+        }
+    }
+    # A real loopback socket accepts a connection but never sends HTTP headers.
+    # Verify the production request timeout, not merely a mock's parameter list.
+    $stalledListener = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback), 0
+    try {
+        $stalledListener.Start()
+        $stalledPort = ([Net.IPEndPoint]$stalledListener.LocalEndpoint).Port
+        $failure = $null; $elapsed = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            Wait-EdgeDevToolsTargets -Port $stalledPort `
+                -Process ([pscustomobject]@{ HasExited = $false }) -TimeoutSeconds 1 | Out-Null
+        }
+        catch { $failure = $_ }
+        Assert-True ($null -ne $failure -and $elapsed.Elapsed.TotalSeconds -lt 6) 'Real stalled HTTP response cannot leave startup polling blocked'
+        Assert-True ($failure.Exception.Data['EdgeStartupPort'] -eq $stalledPort -and
+            $failure.Exception.Data['EdgeLauncherState'] -ceq 'Running') 'Real HTTP timeout retains actionable startup diagnosis'
+    }
+    finally { $stalledListener.Stop() }
+
     # Restore the real bridge. Entrypoint tests below mock CDP remote replies, not this function.
     $bridgeDefinition = $ast.Find({ param($n)
         $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
@@ -322,9 +387,9 @@ try {
     function Resolve-EdgeExecutable { 'offline-msedge.exe' }
     function Get-AvailableTcpPort { 12345 }
     function Start-Process { param($FilePath, $ArgumentList, [switch]$PassThru)
-        [pscustomobject]@{ Id = -1; HasExited = $true }
+        [pscustomobject]@{ Id = -1; HasExited = $true; ExitCode = 0 }
     }
-    function Invoke-RestMethod { param($Uri)
+    function Invoke-RestMethod { [CmdletBinding()]param($Uri, $TimeoutSec)
         @([pscustomobject]@{ id = 'controlled-root'; type = 'page'; webSocketDebuggerUrl = 'ws://127.0.0.1:12345/offline' })
     }
     function Get-CdpEvents { param($Client)

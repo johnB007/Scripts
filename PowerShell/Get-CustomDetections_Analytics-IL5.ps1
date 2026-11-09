@@ -1618,6 +1618,63 @@ function Get-AvailableTcpPort {
     }
 }
 
+function Wait-EdgeDevToolsTargets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateRange(1, 65535)]
+        [int]$Port,
+
+        [Parameter(Mandatory = $true)]
+        [object]$Process,
+
+        [ValidateRange(1, 120)]
+        [int]$TimeoutSeconds = 30
+    )
+
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $lastProbe = 'NotAttempted'
+    while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        # A request must not outlive the startup deadline indefinitely. Suppress
+        # the cmdlet's repeated WebRequest logs, not the final startup diagnosis.
+        $requestTimeout = [Math]::Max(1, [Math]::Min(2,
+            [Math]::Ceiling($TimeoutSeconds - $clock.Elapsed.TotalSeconds)))
+        try {
+            $targets = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" `
+                -TimeoutSec $requestTimeout -ErrorAction Stop -Verbose:$false
+            $pages = @($targets | Where-Object {
+                $null -ne $_ -and $_.PSObject.Properties['type'] -and $_.type -eq 'page'
+            })
+            if ($pages.Count -gt 0) { return $targets }
+            $lastProbe = 'EndpointAnsweredWithoutPage'
+        }
+        catch {
+            # Do not include arbitrary response bodies or raw exception messages.
+            $lastProbe = $_.Exception.GetType().Name
+        }
+        if ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+            Start-Sleep -Milliseconds 200
+        }
+    }
+
+    $launcherState = 'Unavailable'
+    try {
+        $launcherState = if ($Process.HasExited) { "Exited (exit code $($Process.ExitCode))" } else { 'Running' }
+    }
+    catch { }
+    # An exited launcher can hand off to another browser process. Diagnose it
+    # only after the endpoint deadline, never treat launcher exit alone as failure.
+    $exception = New-Object TimeoutException (
+        "Edge startup failed before portal sign-in: no usable DevTools page on 127.0.0.1:$Port " +
+        "within $TimeoutSeconds seconds. Launcher: $launcherState. Last probe: $lastProbe. " +
+        'If using an Administrator terminal, retry from a normal PowerShell window. ' +
+        'Use a new isolated -ProfilePath and a new -OutputPath to distinguish a profile-specific failure. ' +
+        'Increasing -LoginTimeoutSeconds does not extend Edge startup. Do not disable browser policy.')
+    $exception.Data['EdgeStartupPort'] = $Port
+    $exception.Data['EdgeLauncherState'] = $launcherState
+    $exception.Data['EdgeStartupLastProbe'] = $lastProbe
+    throw $exception
+}
+
 function Get-EdgeProfile {
     param(
         [Parameter(Mandatory = $true)]
@@ -2217,21 +2274,10 @@ try {
     if ($SelectEdgeProfile) {
         $edgeArguments = @("--profile-directory=`"$EdgeProfileDirectory`"") + $edgeArguments
     }
+    Write-Host 'Starting isolated Microsoft Edge. Waiting up to 30 seconds for its local DevTools page...' -ForegroundColor Cyan
     $edgeProcess = Start-Process -FilePath $edgePath -ArgumentList $edgeArguments -PassThru
-
-    $devToolsDeadline = (Get-Date).AddSeconds(30)
-    $targets = $null
-    while ($null -eq $targets) {
-        if ((Get-Date) -gt $devToolsDeadline) {
-            throw "Timed out waiting for the Edge DevTools endpoint on port $port."
-        }
-        try {
-            $targets = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/list"
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
+    Write-Verbose "Edge launcher PID: $($edgeProcess.Id)"
+    $targets = Wait-EdgeDevToolsTargets -Port $port -Process $edgeProcess
 
     $target = $targets | Where-Object { $_.type -eq 'page' } | Select-Object -First 1
     if ($null -eq $target) {

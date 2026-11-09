@@ -7,7 +7,8 @@ Sentinel analytics rules through the Azure portal in Microsoft Edge.
 
 Source: [johnB007/MDATP account selection contribution](https://github.com/johnB007/MDATP/blob/ecf576fbc332223e829bd01a58c127e1171f5aa0/Scripts/Custom%20Detections/Get-CustomDetections/Get-CustomDetections.ps1).
 Original project: [JesseEsquivel/MDATP](https://github.com/JesseEsquivel/MDATP/tree/master/Scripts/Custom%20Detections/Get-CustomDetections).
-The original disclaimer and Edge launcher are retained. MDE remains the default.
+The original disclaimer and Edge launch arguments are retained. Startup polling
+is bounded and reports failures separately from portal sign in. MDE remains the default.
 
 ## Run
 
@@ -346,7 +347,47 @@ the same location information. Raw exception messages, response bodies and
 authentication data are not included in diagnostics. A DevTools reply must
 contain the expected browser response object before it is used.
 
-With `-Verbose`, the script prints its localhost Edge DevTools endpoint.
+### Edge startup troubleshooting
+
+The script prints a startup message before launching Edge. With `-Verbose`,
+it also prints the localhost DevTools endpoint and launcher PID. It waits
+30 seconds for a page target, with each HTTP probe limited to at most two
+seconds. An in flight probe can finish slightly after that deadline.
+Repeated PowerShell WebRequest verbose lines are suppressed.
+
+If startup fails, the error reports whether the launcher is still running or
+has exited, its exit code when available, and whether the endpoint answered
+without a page or the HTTP probe failed. A launcher exit alone is not failure:
+Edge can hand off to another process. Raw HTTP exception messages are not logged.
+This stage precedes portal sign in. Increasing `-LoginTimeoutSeconds` does
+not extend Edge startup.
+
+If the failure occurs in an Administrator terminal, retry in a normal
+PowerShell window. Use a new isolated profile and output directory to
+distinguish a profile-specific issue without resetting or importing an
+existing profile. Replace the target placeholders:
+
+```powershell
+$runId = [Guid]::NewGuid().ToString('N')
+.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both `
+    -TenantId '<tenant-guid>' -SubscriptionId '<subscription-guid>' `
+    -ResourceGroupName '<resource-group>' -WorkspaceName '<workspace-name>' `
+    -ProfilePath (Join-Path $env:TEMP "RuleExporter-$runId") `
+    -OutputPath (Join-Path $env:LOCALAPPDATA "RuleExports\IL2-$runId") `
+    -LoginTimeoutSeconds 1800 -Verbose
+```
+
+For IL5 use its edition and approved profile and output storage instead.
+This retry is a diagnostic distinction, not proof that elevation or the old
+profile caused the failure. Do not disable browser policies, change global
+proxy settings or close unrelated Edge windows. Endpoint absence observed
+after script termination does not establish that Edge never started, because
+startup failure cleanup can stop the launched process.
+
+The default profile is `%LOCALAPPDATA%\Get-CustomDetections\EdgeProfile`,
+independent of the script's working directory. Paths with spaces are quoted
+in the Edge launch arguments.
+
 The script closes its Edge window when it completes or fails. There is no
 keep open flag. Increasing `-LoginTimeoutSeconds` gives more time to sign in
 but does not prevent closing after completion. Omitting
@@ -379,6 +420,12 @@ MDE preservation, individual and combined selection, multiple Sentinel kinds,
 pagination, tenant and audience checks, HTTP errors, partial results, output
 protection and browser cleanup. No existing exporter regression suite was
 present in this repository.
+
+Startup tests cover a ready endpoint, launcher handoff, delayed page creation,
+running and exited launchers without an endpoint, and an endpoint without a
+page. A real temporary loopback listener that never returns HTTP headers
+verifies that a stalled request terminates within the test budget. No Edge
+window or portal is opened by the regression suite.
 
 Entrypoint tests exercise the real Sentinel browser request bridge with
 mocked CDP replies, including observer startup, navigation, malformed replies,
