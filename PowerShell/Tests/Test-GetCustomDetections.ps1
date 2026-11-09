@@ -121,21 +121,23 @@ try {
         $commercialDefault.EndOffset - $commercialDefault.StartOffset).Insert(
             $commercialDefault.StartOffset, "'USGovDoD'") -ceq $source) 'Edition source identity after normalizing cloud default'
     foreach ($label in @('IL2', 'IL5')) {
-        $editionPath = Join-Path (Split-Path $scriptPath -Parent) "Get-CustomDetections-$label.ps1"
-        $marker = "# Generated $label edition from Get-CustomDetections.ps1. Do not edit this copy."
+        $editionPath = Join-Path (Split-Path $scriptPath -Parent) "Get-CustomDetections_Analytics-$label.ps1"
+        $marker = "# Generated $label detection and analytics edition from Get-CustomDetections.ps1. Do not edit this copy."
         $body = if ($label -eq 'IL2') { $commercialCopy } else { $source }
         $expected = $marker + [Environment]::NewLine + $body
         if ($RegenerateEditions) {
             if (Test-Path -LiteralPath $editionPath) {
                 $existing = Get-Item -LiteralPath $editionPath
                 if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-                    -not ([IO.File]::ReadAllText($editionPath).StartsWith($marker + [Environment]::NewLine))) {
+                    (([IO.File]::ReadAllText($editionPath) -split '\r?\n', 2)[0] -cne $marker)) {
                     throw 'Refusing to replace an unrecognized or linked edition file.'
                 }
             }
             [IO.File]::WriteAllText($editionPath, $expected, (New-Object Text.UTF8Encoding($false)))
         }
         Assert-True (Test-Path -LiteralPath $editionPath) "Standalone $label edition exists"
+        $oldEditionPath = Join-Path (Split-Path $scriptPath -Parent) "Get-CustomDetections-$label.ps1"
+        Assert-True (-not (Test-Path -LiteralPath $oldEditionPath)) "Old $label edition name removed without duplicate alias"
         $editionSource = [IO.File]::ReadAllText($editionPath)
         Assert-True ($editionSource -ceq $expected) "Standalone $label source parity, including generated marker and intended default"
         $editionErrors = $null; $editionTokens = $null

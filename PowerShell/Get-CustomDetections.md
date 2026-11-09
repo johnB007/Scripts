@@ -182,8 +182,9 @@ the request is refused rather than changing versions.
 
 The dedicated DoD copy defaults to `USGovDoD`. The dedicated Commercial copy
 defaults to `Commercial`. They are generated from the same canonical script;
-the repository files are `Get-CustomDetections-IL5.ps1` and
-`Get-CustomDetections-IL2.ps1`, respectively. Only a generated label comment and
+the repository files are `Get-CustomDetections_Analytics-IL5.ps1` and
+`Get-CustomDetections_Analytics-IL2.ps1`, respectively. Their names reflect both
+custom detection and analytics exports. Only a generated label comment and
 the cloud parameter default differ. Modes remain selectable and MDE remains
 the default mode. These shared instructions apply to all three scripts.
 
@@ -195,7 +196,7 @@ compatible, with its original DoD default.
 Replace the placeholders and choose a new approved export directory:
 
 ```powershell
-.\Get-CustomDetections-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD `
+.\Get-CustomDetections_Analytics-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD `
     -TenantId '<DoD tenant GUID>' -SubscriptionId '<Government subscription GUID>' `
     -ResourceGroupName 'Agency-SOC' -WorkspaceName 'Agency-SOC' `
     -OutputPath 'C:\ApprovedExportLocation\NewExport' -LoginTimeoutSeconds 1800 -Verbose
@@ -239,7 +240,7 @@ and verified before adding support; no wildcard Government frame trust is used.
 Use the same required workspace targeting with the Commercial edition:
 
 ```powershell
-.\Get-CustomDetections-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial `
+.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial `
     -TenantId '<Commercial tenant GUID>' -SubscriptionId '<Commercial subscription GUID>' `
     -ResourceGroupName 'Commercial-SOC' -WorkspaceName 'Commercial-SOC' `
     -OutputPath 'C:\ApprovedExportLocation\NewCommercialExport' -Verbose

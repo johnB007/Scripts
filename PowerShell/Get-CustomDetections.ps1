@@ -148,7 +148,7 @@ Edge profile or using InPrivate. Confirm the email shown in the Defender
 webpage account menu when prompted in PowerShell. A mismatch cancels export.
 
 .NOTES
-Get-CustomDetections-IL2.ps1 and Get-CustomDetections-IL5.ps1 are generated
+Get-CustomDetections_Analytics-IL2.ps1 and Get-CustomDetections_Analytics-IL5.ps1 are generated
 standalone editions of this canonical implementation. IL2 selects Commercial
 by default and IL5 selects USGovDoD. These labels identify intended target
 environments, not formal authorization or certification. Shared instructions
