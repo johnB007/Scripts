@@ -80,6 +80,25 @@ function Invoke-TestExport {
     Export-SentinelRules -Target $target -OutputPath $directory -RuleNames $Names
 }
 try {
+    $workspaceLookupQuery = @'
+Resources
+| where type =~ 'microsoft.operationalinsights/workspaces'
+| project TenantId = tenantId, SubscriptionId = subscriptionId, ResourceGroupName = resourceGroup, WorkspaceName = name
+| order by WorkspaceName asc
+'@
+    $workspaceLookupQuery = $workspaceLookupQuery.Replace("`r`n", "`n")
+    $documentationPath = Join-Path (Split-Path $scriptPath -Parent) 'Get-CustomDetections.md'
+    $documentation = [IO.File]::ReadAllText($documentationPath).Replace("`r`n", "`n")
+    $embeddedHelp = $ast.GetHelpContent()
+    Assert-True ($null -ne $embeddedHelp -and
+        $embeddedHelp.Notes.Replace("`r`n", "`n").Contains($workspaceLookupQuery)) 'Exact manual workspace query is in executable script comment based help'
+    Assert-True ($documentation.Contains($workspaceLookupQuery)) 'Shared instructions contain the identical Resource Graph query'
+    Assert-True ($embeddedHelp.Notes.Contains('not in Sentinel Logs or Defender advanced hunting') -and
+        $embeddedHelp.Notes.Contains('customerId') -and
+        $embeddedHelp.Notes.Contains('same selected row')) 'Help distinguishes query surface and Entra tenant from workspace identifiers'
+    foreach ($column in @('TenantId', 'SubscriptionId', 'ResourceGroupName', 'WorkspaceName')) {
+        Assert-True ($embeddedHelp.Notes.Contains("$column supplies -$column")) "Lookup column maps to exact $column switch"
+    }
     # Fingerprints from the full Commercial run that exported 3 Defender and
     # 242 Sentinel resources. Normalize newline style, not source algorithms.
     $commercialCore = @{
@@ -92,6 +111,16 @@ try {
     }
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
+        # Executable AST fingerprints from published startup fix c44d0aa2.
+        # Documentation changes must not alter parameters or runtime statements.
+        foreach ($part in @(
+            @{ name = 'ParamBlock'; hash = 'F8AB3F5AB15EE2FEF90A3484702829EE67624406A0685E6E8B14EA3DAB48B327' },
+            @{ name = 'EndBlock'; hash = 'B3F1A67C85B08D3D818A8DD452F231D99F5E62D51B356FE6D952FDE4687AA95D' }
+        )) {
+            $normalized = $ast.($part.name).Extent.Text.Replace("`r`n", "`n")
+            $actual = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($normalized))).Replace('-', '')
+            Assert-True ($actual -ceq $part.hash) "Published startup fix executable $($part.name) preserved"
+        }
         foreach ($name in $commercialCore.Keys) {
             $definition = $ast.Find({param($node)
                 $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -149,6 +178,20 @@ try {
         $expectedDefault = if ($label -eq 'IL2') { "'Commercial'" } else { "'USGovDoD'" }
         Assert-True (@($editionErrors).Count -eq 0 -and
             $editionDefault -ceq $expectedDefault) "Standalone $label cloud default and syntax"
+        $editionHelp = $editionAst.GetHelpContent()
+        Assert-True ($null -ne $editionHelp -and
+            $editionHelp.Notes.Replace("`r`n", "`n").Contains($workspaceLookupQuery)) "Standalone $label built in help includes the exact query"
+        $helpCommand = "Get-Help .\Get-CustomDetections_Analytics-$label.ps1 -Full"
+        Assert-True ($editionHelp.Notes.Contains($helpCommand) -and
+            $documentation.Contains($helpCommand)) "Standalone $label help viewing command documented"
+        $renderedHelp = Get-Help -Name $editionPath -Full | Out-String -Width 4096
+        Assert-True ($renderedHelp.Contains('| order by WorkspaceName asc') -and
+            $renderedHelp.Contains('Azure Resource Graph Explorer')) "Actual Get Help Full renders $label lookup instructions without executing exporter"
+        $exampleCommand = ".\Get-CustomDetections_Analytics-$label.ps1 -ExportMode Both"
+        $exampleLines = @($editionSource -split '\r?\n' | Where-Object { $_.StartsWith($exampleCommand) })
+        Assert-True ($exampleLines.Count -eq 1 -and -not $exampleLines[0].Contains('`') -and
+            $exampleLines[0].Contains("-WorkspaceName '<workspace name>'") -and
+            $documentation.Contains($exampleLines[0])) "Standalone $label invocation is one line with matching shared instructions"
     }
     foreach ($fixture in @(
         @{ text = 'Cannot find context with specified id'; reason = 'ContextUnavailable'; code = -32000 },

@@ -23,6 +23,9 @@
 # Script variables - please do not change these unless you know what you are doing
 ##################################################################################################################
 
+#>
+
+<#
 .SYNOPSIS
 Exports Defender custom detections and Sentinel analytics rules through Edge.
 
@@ -34,6 +37,8 @@ window and an ARM bearer from its legitimate fetch or XHR requests. RBAC is
 enforced by ARM. No CLI or additional authentication module is used.
 The script is self-contained and supports Windows
 PowerShell 5.1.
+The NOTES section includes a manual Azure Resource Graph workspace lookup.
+The script does not execute that query or populate parameters automatically.
 
 .PARAMETER ExportMode
 MDE preserves the original behavior and is the default. Sentinel exports only
@@ -147,6 +152,19 @@ Requests interactive sign in for the specified account without importing an
 Edge profile or using InPrivate. Confirm the email shown in the Defender
 webpage account menu when prompted in PowerShell. A mismatch cancels export.
 
+.EXAMPLE
+.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial -TenantId '<Entra tenant GUID>' -SubscriptionId '<subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>'
+
+Replace the placeholders with one selected workspace row from the manual
+Resource Graph lookup in NOTES. Run this command on a single line.
+
+.EXAMPLE
+.\Get-CustomDetections_Analytics-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD -TenantId '<Entra tenant GUID>' -SubscriptionId '<subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>'
+
+Use the Government portal for the manual workspace lookup. Replace every
+placeholder and run this command on a single line. IL5 live validation remains
+pending the user's test in the real tenant.
+
 .NOTES
 Get-CustomDetections_Analytics-IL2.ps1 and Get-CustomDetections_Analytics-IL5.ps1 are generated
 standalone editions of this canonical implementation. IL2 selects Commercial
@@ -154,6 +172,43 @@ by default and IL5 selects USGovDoD. These labels identify intended target
 environments, not formal authorization or certification. Shared instructions
 are in Get-CustomDetections.md. Edit this canonical script and regenerate the
 editions using Tests\Test-GetCustomDetections.ps1 -RegenerateEditions.
+
+Finding workspace parameter values
+
+View these instructions without running the exporter:
+Get-Help .\Get-CustomDetections_Analytics-IL2.ps1 -Full
+Get-Help .\Get-CustomDetections_Analytics-IL5.ps1 -Full
+
+For IL2, open https://portal.azure.com in the browser. For IL5, open
+https://portal.azure.us. In that portal, open Azure Resource Graph Explorer
+and select only approved subscriptions in the intended directory. Run the
+following query there, not in Sentinel Logs or Defender advanced hunting:
+
+Resources
+| where type =~ 'microsoft.operationalinsights/workspaces'
+| project TenantId = tenantId, SubscriptionId = subscriptionId, ResourceGroupName = resourceGroup, WorkspaceName = name
+| order by WorkspaceName asc
+
+The query lists accessible Log Analytics workspaces. It does not prove that
+Sentinel is enabled. Choose one workspace and confirm Microsoft Sentinel is
+enabled for it in the portal before exporting Sentinel analytics.
+
+Copy all four values from the same selected row:
+TenantId supplies -TenantId and is the Microsoft Entra tenant GUID.
+SubscriptionId supplies -SubscriptionId.
+ResourceGroupName supplies -ResourceGroupName.
+WorkspaceName supplies -WorkspaceName.
+
+Use the Resource Graph tenantId column, not the Log Analytics workspace
+TenantId or customerId property. Those workspace identifiers are not the
+Microsoft Entra tenant GUID required by -TenantId. For Both, Defender and the
+selected workspace must belong to that same specified Entra tenant.
+
+Replace all placeholders in the single line examples. Choose -OutputPath
+separately as a new approved local directory. DetectionNames and
+SentinelRuleNames are optional name filters and are omitted from these
+examples. No subscription discovery, account change, authentication request
+or query execution is added by these lookup instructions.
 
 Account targeting changes apply only when UserPrincipalName is supplied.
 Only main frame Microsoft authorization requests are changed. Their existing

@@ -62,6 +62,59 @@ Existing `-SelectEdgeProfile`, `-EdgeProfileDirectory`, `-ResetProfile` and
 confirm the displayed account separately inside each portal. The login hint
 does not bypass organizational policy or verify the account automatically.
 
+## Find the workspace switch values
+
+These are manual browser instructions, not automatic parameter population.
+The exporter does not execute the query, discover subscriptions or acquire
+another authentication session for this lookup.
+
+View the instructions built into either standalone script without running it:
+
+```powershell
+Get-Help .\Get-CustomDetections_Analytics-IL2.ps1 -Full
+Get-Help .\Get-CustomDetections_Analytics-IL5.ps1 -Full
+```
+
+For IL2, open `https://portal.azure.com`. For IL5, open
+`https://portal.azure.us`. In the correct directory, open **Azure Resource
+Graph Explorer** in that browser portal and select only approved subscriptions.
+Run this query there, **not Sentinel Logs or Defender advanced hunting**:
+
+```kusto
+Resources
+| where type =~ 'microsoft.operationalinsights/workspaces'
+| project TenantId = tenantId, SubscriptionId = subscriptionId, ResourceGroupName = resourceGroup, WorkspaceName = name
+| order by WorkspaceName asc
+```
+
+The query lists accessible Log Analytics workspaces. It does not filter for or
+prove that Sentinel is enabled. Choose one result and confirm Microsoft
+Sentinel is enabled for that workspace in the portal.
+
+Copy all values from that same result row. `TenantId` maps to `-TenantId`,
+`SubscriptionId` maps to `-SubscriptionId`, `ResourceGroupName` maps to
+`-ResourceGroupName`, and `WorkspaceName` maps to `-WorkspaceName`.
+
+The Resource Graph `tenantId` is the Microsoft Entra tenant GUID. Do not copy
+the Log Analytics workspace `TenantId` or `customerId` property as the Entra
+tenant argument. Those workspace identifiers are different. With Both, the
+Defender tenant and workspace must match the specified Entra tenant.
+
+Replace every placeholder, choose a new approved local directory for
+`-OutputPath`, and paste the appropriate command as **one line**:
+
+```powershell
+.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial -TenantId '<Entra tenant GUID>' -SubscriptionId '<subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>'
+```
+
+```powershell
+.\Get-CustomDetections_Analytics-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD -TenantId '<Entra tenant GUID>' -SubscriptionId '<subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>'
+```
+
+Name filters are optional and omitted from these examples. No account,
+subscription context, permission or authentication setting is changed by
+adding these instructions.
+
 ## Authentication and permissions
 
 RBAC authorizes operations. It does not remove the need for an access token.
@@ -197,10 +250,7 @@ compatible, with its original DoD default.
 Replace the placeholders and choose a new approved export directory:
 
 ```powershell
-.\Get-CustomDetections_Analytics-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD `
-    -TenantId '<DoD tenant GUID>' -SubscriptionId '<Government subscription GUID>' `
-    -ResourceGroupName 'Agency-SOC' -WorkspaceName 'Agency-SOC' `
-    -OutputPath 'C:\ApprovedExportLocation\NewExport' -LoginTimeoutSeconds 1800 -Verbose
+.\Get-CustomDetections_Analytics-IL5.ps1 -ExportMode Both -CloudEnvironment USGovDoD -TenantId '<DoD tenant GUID>' -SubscriptionId '<Government subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>' -LoginTimeoutSeconds 1800 -Verbose
 ```
 
 For a version already confirmed by the agency, add
@@ -241,10 +291,7 @@ and verified before adding support; no wildcard Government frame trust is used.
 Use the same required workspace targeting with the Commercial edition:
 
 ```powershell
-.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial `
-    -TenantId '<Commercial tenant GUID>' -SubscriptionId '<Commercial subscription GUID>' `
-    -ResourceGroupName 'Commercial-SOC' -WorkspaceName 'Commercial-SOC' `
-    -OutputPath 'C:\ApprovedExportLocation\NewCommercialExport' -Verbose
+.\Get-CustomDetections_Analytics-IL2.ps1 -ExportMode Both -CloudEnvironment Commercial -TenantId '<Commercial tenant GUID>' -SubscriptionId '<Commercial subscription GUID>' -ResourceGroupName '<resource group>' -WorkspaceName '<workspace name>' -OutputPath '<new approved export directory>' -Verbose
 ```
 
 Either edition can select a different supported cloud explicitly. MDE only
