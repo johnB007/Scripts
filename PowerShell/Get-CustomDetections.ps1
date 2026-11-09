@@ -24,13 +24,45 @@
 ##################################################################################################################
 
 .SYNOPSIS
-Exports Microsoft Defender XDR custom detection rules from the DoD portal.
+Exports Defender custom detections and Sentinel analytics rules through Edge.
 
 .DESCRIPTION
 Launches Microsoft Edge, uses the authenticated Defender portal session to
 retrieve custom detection rules, and writes each complete rule configuration
-and query to JSON and kql files. The script is self-contained and supports Windows
+and query to JSON and kql files. Sentinel uses the Azure portal in the same Edge
+window and an ARM bearer from its legitimate fetch or XHR requests. RBAC is
+enforced by ARM. No CLI or additional authentication module is used.
+The script is self-contained and supports Windows
 PowerShell 5.1.
+
+.PARAMETER ExportMode
+MDE preserves the original behavior and is the default. Sentinel exports only
+analytics rules. Both exports each source into its own directory.
+
+.PARAMETER CloudEnvironment
+Commercial selects the commercial Defender and Azure portals. USGov selects
+the Government Defender portal. USGovDoD selects security.apps.mil.
+The edition default is declared in the parameter block. Both Government
+choices use portal.azure.us and Government ARM.
+
+.PARAMETER SentinelApiVersion
+Optional confirmed alertRules API version. Commercial defaults to 2025-09-01.
+Government otherwise discovers an advertised stable version using a browser
+GET of the selected subscription's provider metadata. Discovery requires
+provider read permission and never registers a provider or grants access.
+
+.PARAMETER SubscriptionId
+The subscription containing the Sentinel workspace. Required with Sentinel or Both.
+
+.PARAMETER ResourceGroupName
+The resource group containing the Sentinel workspace. Required with Sentinel or Both.
+
+.PARAMETER WorkspaceName
+The Sentinel workspace name. Required with Sentinel or Both.
+
+.PARAMETER SentinelRuleNames
+Optional exact Sentinel display names as an array or comma separated string.
+Rules without a display name use their resource name.
 
 .PARAMETER TenantId
 Specifies the Microsoft Entra tenant ID used to open the Defender portal.
@@ -116,6 +148,13 @@ Edge profile or using InPrivate. Confirm the email shown in the Defender
 webpage account menu when prompted in PowerShell. A mismatch cancels export.
 
 .NOTES
+Get-CustomDetections-IL2.ps1 and Get-CustomDetections-IL5.ps1 are generated
+standalone editions of this canonical implementation. IL2 selects Commercial
+by default and IL5 selects USGovDoD. These labels identify intended target
+environments, not formal authorization or certification. Shared instructions
+are in Get-CustomDetections.md. Edit this canonical script and regenerate the
+editions using Tests\Test-GetCustomDetections.ps1 -RegenerateEditions.
+
 Account targeting changes apply only when UserPrincipalName is supplied.
 Only main frame Microsoft authorization requests are changed. Their existing
 client, redirect, tenant, state, nonce, scopes, and PKCE parameters are retained.
@@ -138,6 +177,22 @@ param(
     [Alias('CustomDetectionNames')]
     [string[]]$DetectionNames,
 
+    [ValidateSet('MDE', 'Sentinel', 'Both')]
+    [string]$ExportMode = 'MDE',
+
+    [ValidateSet('Commercial', 'USGov', 'USGovDoD')]
+    [string]$CloudEnvironment = 'USGovDoD',
+
+    [Guid]$SubscriptionId,
+
+    [ValidatePattern('^[A-Za-z0-9_().-]{1,90}$')]
+    [string]$ResourceGroupName,
+
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9-]{2,88}[A-Za-z0-9]$')]
+    [string]$WorkspaceName,
+
+    [string[]]$SentinelRuleNames,
+
     [string]$OutputPath,
 
     [string]$ProfilePath,
@@ -155,18 +210,45 @@ param(
 
     [switch]$RemoveCachedProfile,
 
-    [switch]$ResetProfile
+    [switch]$ResetProfile,
+
+    [ValidatePattern('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$')]
+    [string]$SentinelApiVersion
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
+function Assert-SentinelApiVersion {
+    param([string]$Version)
+    $date = [DateTime]::MinValue
+    if ($Version -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$' -or
+        -not [DateTime]::TryParseExact($Version.Substring(0, 10), 'yyyy-MM-dd',
+            [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$date)) {
+        throw 'SentinelApiVersion must be a real date in yyyy-MM-dd format, optionally followed by -preview.'
+    }
+}
+if ($SentinelApiVersion) { Assert-SentinelApiVersion -Version $SentinelApiVersion }
+
 if ($UserPrincipalName -and ($SelectEdgeProfile -or $EdgeProfileDirectory -or $ResetProfile)) {
     throw 'With UserPrincipalName, omit SelectEdgeProfile, EdgeProfileDirectory, and ResetProfile. Account selection uses a new isolated profile.'
 }
+if ($ExportMode -ne 'MDE' -and (
+    $SubscriptionId -eq [Guid]::Empty -or
+    [string]::IsNullOrWhiteSpace($ResourceGroupName) -or
+    [string]::IsNullOrWhiteSpace($WorkspaceName))) {
+    throw 'Sentinel and Both require SubscriptionId, ResourceGroupName, and WorkspaceName.'
+}
+if ($ExportMode -eq 'Sentinel' -and $DetectionNames) {
+    throw 'DetectionNames applies only to MDE. Use SentinelRuleNames for Sentinel.'
+}
+if ($ExportMode -eq 'MDE' -and $SentinelRuleNames) {
+    throw 'SentinelRuleNames requires Sentinel or Both.'
+}
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path $PSScriptRoot ('exports\{0:yyyyMMdd-HHmmss}' -f (Get-Date))
+    $OutputPath = Join-Path $PSScriptRoot ('exports\{0:yyyyMMdd-HHmmss}-{1}' -f
+        (Get-Date), [Guid]::NewGuid().ToString('N').Substring(0, 8))
 }
 if ([string]::IsNullOrWhiteSpace($ProfilePath)) {
     $profileDirectory = if ($UserPrincipalName) {
@@ -179,11 +261,27 @@ if ([string]::IsNullOrWhiteSpace($ProfilePath)) {
 }
 $OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 $ProfilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProfilePath)
+$repositoryPath = [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)).TrimEnd('\')
+$normalEdgePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data')).TrimEnd('\')
+foreach ($protectedRoot in @($repositoryPath, $normalEdgePath)) {
+    $profileRoot = [IO.Path]::GetFullPath($ProfilePath).TrimEnd('\')
+    if ($profileRoot -ieq $protectedRoot -or
+        $profileRoot.StartsWith($protectedRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $protectedRoot.StartsWith($profileRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'ProfilePath must be isolated from the repository and normal Edge profiles.'
+    }
+}
 if ($UserPrincipalName -and (Test-Path -LiteralPath $ProfilePath)) {
     throw 'With UserPrincipalName, ProfilePath must be a new directory. Omit ProfilePath to create one automatically.'
 }
-$portalUrl = 'https://security.apps.mil/v2/custom_detection?tid={0}' -f
+$defenderHost = switch ($CloudEnvironment) {
+    'Commercial' { 'security.microsoft.com' }
+    'USGov' { 'security.microsoft.us' }
+    'USGovDoD' { 'security.apps.mil' }
+}
+$portalUrl = ('https://{0}/v2/custom_detection?tid={1}' -f $defenderHost,
     [Uri]::EscapeDataString($TenantId.ToString('D'))
+)
 
 $cdpClientSource = @'
 using System;
@@ -221,6 +319,11 @@ namespace CustomDetections
 
         public string Call(string method, string parametersJson, int timeoutMilliseconds)
         {
+            return Call(method, parametersJson, timeoutMilliseconds, null);
+        }
+
+        public string Call(string method, string parametersJson, int timeoutMilliseconds, string sessionId)
+        {
             if (socket.State != WebSocketState.Open)
             {
                 throw new InvalidOperationException("The Edge DevTools connection is not open.");
@@ -236,6 +339,8 @@ namespace CustomDetections
             string parameters = String.IsNullOrWhiteSpace(parametersJson) ? "{}" : parametersJson;
             string payload = "{\"id\":" + id +
                 ",\"method\":\"" + EscapeJsonString(method) +
+                (String.IsNullOrEmpty(sessionId) ? String.Empty :
+                    "\",\"sessionId\":\"" + EscapeJsonString(sessionId)) +
                 "\",\"params\":" + parameters + "}";
 
             byte[] bytes = Encoding.UTF8.GetBytes(payload);
@@ -390,6 +495,846 @@ namespace CustomDetections
 
 Add-Type -TypeDefinition $cdpClientSource
 
+function Get-SentinelTarget {
+    param([Guid]$TenantId, [Guid]$SubscriptionId, [string]$ResourceGroupName,
+        [string]$WorkspaceName, [string]$CloudEnvironment, [string]$SentinelApiVersion)
+
+    $government = $CloudEnvironment -ne 'Commercial'
+    if ($SentinelApiVersion) { Assert-SentinelApiVersion -Version $SentinelApiVersion }
+    $discoverVersion = $government -and -not $SentinelApiVersion
+    $version = if ($SentinelApiVersion) { $SentinelApiVersion }
+        elseif ($discoverVersion) { '' } else { '2025-09-01' }
+    $armHost = if ($government) { 'management.usgovcloudapi.net' } else { 'management.azure.com' }
+    $portalHost = if ($government) { 'portal.azure.us' } else { 'portal.azure.com' }
+    $resourceId = '/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.OperationalInsights/workspaces/{2}' -f
+        $SubscriptionId.ToString('D'), [Uri]::EscapeDataString($ResourceGroupName),
+        [Uri]::EscapeDataString($WorkspaceName)
+    $collectionPath = "$resourceId/providers/Microsoft.SecurityInsights/alertRules"
+    $providerId = '/subscriptions/{0}/providers/Microsoft.SecurityInsights' -f $SubscriptionId.ToString('D')
+    [pscustomobject]@{
+        TenantId = $TenantId.ToString('D')
+        ArmHost = $armHost
+        PortalHost = $portalHost
+        BrowserOrigins = @(if ($government) { "https://$portalHost" } else {
+            "https://$portalHost"; 'https://sandbox-1.reactblade.portal.azure.net'
+        })
+        ResourceId = $resourceId
+        CollectionPath = $collectionPath
+        ApiVersion = $version
+        RequiresApiVersionDiscovery = $discoverVersion
+        ApiVersionSource = if ($SentinelApiVersion) { 'ExplicitParameter' }
+            elseif ($discoverVersion) { 'PendingGovernmentDiscovery' } else { 'CommercialDefault' }
+        ProviderId = $providerId
+        ProviderMetadataUrl = "https://$armHost$providerId`?api-version=2021-04-01"
+        ListUrl = if ($version) { "https://$armHost$collectionPath`?api-version=$version" } else { '' }
+        PortalUrl = "https://$portalHost/#@$($TenantId.ToString('D'))/resource$resourceId/overview"
+        Audiences = if ($government) {
+            @('https://management.core.usgovcloudapi.net', 'https://management.usgovcloudapi.net')
+        } else {
+            @('https://management.core.windows.net', 'https://management.azure.com')
+        }
+    }
+}
+
+function Assert-SentinelListUrl {
+    param([string]$Url, [object]$Target)
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -ne 'https' -or -not $uri.IsDefaultPort -or
+        $uri.Host -ine $Target.ArmHost -or $uri.UserInfo -or $uri.Fragment -or
+        $uri.AbsolutePath -ine $Target.CollectionPath) {
+        throw 'Sentinel pagination left the selected cloud or workspace. No request was sent.'
+    }
+    $versions = @($uri.Query.TrimStart('?').Split('&') | Where-Object {
+        [Uri]::UnescapeDataString(($_ -split '=', 2)[0]) -ieq 'api-version'
+    })
+    if ($versions.Count -ne 1 -or
+        [Uri]::UnescapeDataString(($versions[0] -split '=', 2)[1]) -ne $Target.ApiVersion) {
+        throw 'Sentinel pagination changed the API version. No request was sent.'
+    }
+}
+
+function Assert-MdeListUrl {
+    param([string]$Url, [string]$PortalHost)
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -ne 'https' -or -not $uri.IsDefaultPort -or
+        $uri.Host -ine $PortalHost -or $uri.UserInfo -or $uri.Fragment -or
+        $uri.AbsolutePath -ne '/apiproxy/hunting/huntingService/rules/unified') {
+        throw 'The captured MDE request is outside the selected Defender portal. No replay was performed.'
+    }
+}
+
+function New-SentinelBrowserObserver {
+    param([object]$Target)
+
+    $configuration = $Target | ConvertTo-Json -Depth 10 -Compress
+    # The ARM bearer stays inside this document closure. Neither CDP results nor files contain it.
+    $source = @'
+(() => {
+  const cfg = __CONFIG__;
+  if (!cfg.BrowserOrigins.includes(location.origin)) return;
+  if (typeof window.__sentinelExporter === "function") return;
+  let bearer = null;
+  let rejected = false;
+  let retainedReply = null;
+  let versionConfirmed = !cfg.RequiresApiVersionDiscovery;
+  const originalFetch = window.fetch;
+  const decode = text => JSON.parse(new TextDecoder().decode(Uint8Array.from(
+    atob(text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "=")),
+    c => c.charCodeAt(0))));
+  function valid(value) {
+    try {
+      const parts = value.split(" ");
+      if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") return false;
+      const token = parts[1];
+      if (!/^[A-Za-z0-9_.-]+$/.test(token)) return false;
+      const claims = decode(token.split(".")[1]);
+      return String(claims.tid).toLowerCase() === cfg.TenantId.toLowerCase() &&
+        cfg.Audiences.includes(String(claims.aud).replace(/\/$/, "")) &&
+        Number(claims.exp) > Date.now() / 1000 + 30;
+    } catch (_) { return false; }
+  }
+  function observe(url, headers) {
+    try {
+      const u = new URL(url, location.href);
+      if (u.origin !== "https://" + cfg.ArmHost || u.username || u.password) return;
+      const authorization = new Headers(headers).get("authorization");
+      if (!authorization) return;
+      if (valid(authorization)) { bearer = authorization; rejected = false; }
+      else { bearer = null; rejected = true; }
+    } catch (_) {}
+  }
+  window.fetch = function(input, init) {
+    observe(typeof input === "string" || input instanceof URL ? input : input.url,
+      init && init.headers !== undefined ? init.headers : input.headers);
+    return originalFetch.apply(this, arguments);
+  };
+  const open = XMLHttpRequest.prototype.open;
+  const setHeader = XMLHttpRequest.prototype.setRequestHeader;
+  const send = XMLHttpRequest.prototype.send;
+  const xhrState = new WeakMap();
+  XMLHttpRequest.prototype.open = function(method, url) {
+    xhrState.set(this, { url, headers: {} });
+    return open.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    const state = xhrState.get(this);
+    if (state) state.headers[name] = value;
+    return setHeader.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    const state = xhrState.get(this);
+    if (state) observe(state.url, state.headers);
+    return send.apply(this, arguments);
+  };
+  async function discoverVersion() {
+    if (versionConfirmed) return { status: "apiVersionSelected", apiVersion: cfg.ApiVersion };
+    if (!bearer || !valid(bearer)) return { status: "authUnavailable" };
+    // Fixed first party metadata GET, not an arbitrary URL supplied by the host.
+    const metadataUrl = new URL(cfg.ProviderMetadataUrl);
+    if (metadataUrl.origin !== "https://" + cfg.ArmHost || metadataUrl.username ||
+        metadataUrl.password || metadataUrl.hash || metadataUrl.pathname !== cfg.ProviderId ||
+        metadataUrl.search !== "?api-version=2021-04-01")
+      return { status: "unsafeUrl" };
+    try {
+      const response = await originalFetch.call(window, metadataUrl.href, {
+        method: "GET", headers: { Authorization: bearer, Accept: "application/json" },
+        credentials: "omit", redirect: "error"
+      });
+      if (response.status !== 200) return { status: "httpError", httpStatus: response.status };
+      let provider;
+      try { provider = JSON.parse(await response.text()); }
+      catch (_) { return { status: "unsupportedProviderMetadata" }; }
+      if (!provider || typeof provider.id !== "string" ||
+          provider.id.toLowerCase() !== cfg.ProviderId.toLowerCase() ||
+          typeof provider.namespace !== "string" ||
+          provider.namespace.toLowerCase() !== "microsoft.securityinsights" ||
+          !Array.isArray(provider.resourceTypes))
+        return { status: "unsupportedProviderMetadata" };
+      const types = provider.resourceTypes.filter(t => t && typeof t.resourceType === "string" &&
+        t.resourceType.toLowerCase() === "alertrules");
+      if (types.length !== 1 || !Array.isArray(types[0].apiVersions) ||
+          !types[0].apiVersions.every(v => typeof v === "string" &&
+            /^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$/.test(v) &&
+            Number.isFinite(Date.parse(v.slice(0, 10) + "T00:00:00Z")) &&
+            new Date(v.slice(0, 10) + "T00:00:00Z").toISOString().slice(0, 10) === v.slice(0, 10)))
+        return { status: "unsupportedProviderMetadata" };
+      const stable = types[0].apiVersions.filter(v => !v.endsWith("-preview")).sort().reverse();
+      if (!stable.length) return { status: "apiVersionUnavailable" };
+      cfg.ApiVersion = stable[0];
+      cfg.ListUrl = "https://" + cfg.ArmHost + cfg.CollectionPath + "?api-version=" + cfg.ApiVersion;
+      versionConfirmed = true;
+      return { status: "apiVersionSelected", apiVersion: cfg.ApiVersion };
+    } catch (_) { return { status: "browserRequestFailed" }; }
+  }
+  async function execute(url) {
+    if (!cfg.BrowserOrigins.includes(location.origin))
+      return { status: "wrongPortal" };
+    if (!url) return { status: bearer && valid(bearer) ? "ready" : rejected ? "wrongIdentity" : "waiting" };
+    if (url === "discoverApiVersion") return await discoverVersion();
+    const u = new URL(url);
+    if (u.origin !== "https://" + cfg.ArmHost || u.username || u.password || u.hash ||
+        u.pathname.toLowerCase() !== cfg.CollectionPath.toLowerCase() ||
+        u.searchParams.getAll("api-version").length !== 1)
+      return { status: "unsafeUrl" };
+    if (!bearer || !valid(bearer)) return { status: "authUnavailable" };
+    // A new authenticated frame may inherit the original unresolved startup
+    // configuration after navigation. Confirm metadata in that realm again;
+    // an API version change is refused rather than changing an in progress export.
+    if (!versionConfirmed) {
+      const selection = await discoverVersion();
+      if (selection.status !== "apiVersionSelected") return selection;
+    }
+    if (u.searchParams.get("api-version") !== cfg.ApiVersion) return { status: "unsafeUrl" };
+    try {
+      const response = await originalFetch.call(window, u.href, {
+        method: "GET", headers: { Authorization: bearer, Accept: "application/json" },
+        credentials: "omit", redirect: "error"
+      });
+      if (response.status !== 200) return { status: "httpError", httpStatus: response.status };
+      return { status: "ok", body: await response.text() };
+    } catch (_) { return { status: "browserRequestFailed" }; }
+  }
+  // Retain the asynchronous reply in this realm until the next bridge call.
+  // CDP must not lose its promise while the portal is loading or collecting garbage.
+  Object.defineProperty(window, "__sentinelExporter", { value: function(url) {
+    retainedReply = execute(url);
+    return retainedReply;
+  }, configurable: false, writable: false });
+})()
+'@
+    return $source.Replace('__CONFIG__', $configuration)
+}
+
+function Invoke-SentinelBrowserRequest {
+    param([CustomDetections.CdpClient]$Client, [string]$Url, [hashtable]$BrowserState)
+
+    $urlJson = ConvertTo-Json -InputObject $Url -Compress
+    $parameters = @{
+        expression = "(async () => JSON.stringify(await (window.__sentinelExporter ? window.__sentinelExporter($urlJson) : ({status:'observerUnavailable'}))))()"
+        awaitPromise = $true
+        returnByValue = $true
+    }
+    $sessionId = ''
+    if ($BrowserState) {
+        if (-not $BrowserState.Active) { throw 'Sentinel has no verified active browser context.' }
+        $parameters.contextId = [int]$BrowserState.Active.ContextId
+        $sessionId = [string]$BrowserState.Active.SessionId
+    }
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        try {
+            $result = Invoke-CdpCommand -Client $Client -Method 'Runtime.evaluate' `
+                -Parameters $parameters -SessionId $sessionId -TimeoutMilliseconds 120000
+            break
+        }
+        catch {
+            # A document can navigate after readiness but before the read.
+            # Retry only a confirmed browser lifecycle loss, never HTTP or unknown failures.
+            if (-not $Url -or -not $BrowserState -or $attempt -gt 0 -or
+                (-not (Test-SentinelContextLoss -ErrorRecord $_) -and
+                    -not (Test-SentinelDetachedTargetError -ErrorRecord $_))) { throw }
+            if (Test-SentinelDetachedTargetError -ErrorRecord $_) {
+                if (-not (Restore-SentinelControlledTarget -Client $Client -BrowserState $BrowserState)) { throw }
+            }
+            else {
+                $BrowserState.Contexts.Remove("$sessionId|$($parameters.contextId)")
+                $BrowserState.Active = $null
+            }
+            $deadline = (Get-Date).AddSeconds(60)
+            while ($true) {
+                Update-SentinelBrowserContexts -Client $Client -BrowserState $BrowserState
+                if (Find-SentinelReadyContext -Client $Client -BrowserState $BrowserState) { break }
+                if ((Get-Date) -ge $deadline) {
+                    throw 'Sentinel could not reacquire a verified authenticated context after navigation.'
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            $parameters.contextId = [int]$BrowserState.Active.ContextId
+            $sessionId = [string]$BrowserState.Active.SessionId
+            if (-not $BrowserState.ContainsKey('RecoveredContextCount')) { $BrowserState.RecoveredContextCount = 0 }
+            $BrowserState.RecoveredContextCount++
+        }
+    }
+    if ($null -eq $result) {
+        throw 'Sentinel DevTools reply was empty.'
+    }
+    if ($result.PSObject.Properties['exceptionDetails']) {
+        $exception = New-Object InvalidOperationException 'Sentinel browser execution failed. No authentication data was saved.'
+        $details = $result.exceptionDetails
+        $remoteException = $details.PSObject.Properties['exception']
+        if ($remoteException -and $remoteException.Value -and
+            $remoteException.Value.PSObject.Properties['className'] -and
+            $remoteException.Value.className -in @('Error', 'TypeError', 'SyntaxError', 'ReferenceError', 'RangeError', 'EvalError', 'URIError')) {
+            $exception.Data['BrowserExceptionType'] = [string]$remoteException.Value.className
+        }
+        throw $exception
+    }
+    $remoteResult = $result.PSObject.Properties['result']
+    if ($null -eq $remoteResult -or $null -eq $remoteResult.Value) {
+        throw 'Sentinel DevTools reply did not contain a remote result.'
+    }
+    $remoteValue = $remoteResult.Value.PSObject.Properties['value']
+    $remoteType = $remoteResult.Value.PSObject.Properties['type']
+    if ($null -eq $remoteValue -or $remoteValue.Value -isnot [string] -or
+        $null -eq $remoteType -or $remoteType.Value -ne 'string') {
+        throw 'Sentinel DevTools reply did not contain a serialized browser response.'
+    }
+    try { $reply = $remoteValue.Value | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'Sentinel DevTools reply contained invalid serialized response JSON.' }
+    if ($null -eq $reply -or $reply -isnot [pscustomobject]) {
+        throw 'Sentinel DevTools reply did not contain a browser response object.'
+    }
+    $status = $reply.PSObject.Properties['status']
+    $knownStatuses = @('ready', 'waiting', 'wrongIdentity', 'wrongPortal', 'unsafeUrl',
+        'authUnavailable', 'httpError', 'ok', 'browserRequestFailed', 'observerUnavailable',
+        'apiVersionSelected', 'unsupportedProviderMetadata', 'apiVersionUnavailable')
+    if ($null -eq $status -or $status.Value -isnot [string] -or $status.Value -notin $knownStatuses) {
+        throw 'Sentinel DevTools reply contained an unsupported browser status.'
+    }
+    if ($reply.status -eq 'ok' -and (
+        -not $reply.PSObject.Properties['body'] -or $reply.body -isnot [string])) {
+        throw 'Sentinel DevTools reply did not contain a JSON response body.'
+    }
+    if ($reply.status -eq 'httpError' -and (
+        -not $reply.PSObject.Properties['httpStatus'] -or
+        [string]$reply.httpStatus -notmatch '^[1-5][0-9]{2}$')) {
+        throw 'Sentinel DevTools reply contained an invalid HTTP status.'
+    }
+    if ($Url -and $reply.status -in @('ready', 'waiting')) {
+        throw 'Sentinel DevTools list reply contained a readiness status instead of a response.'
+    }
+    return $reply
+}
+
+function Resolve-SentinelApiVersion {
+    param([CustomDetections.CdpClient]$Client, [object]$Target, [hashtable]$BrowserState)
+    if (-not $Target.RequiresApiVersionDiscovery) { return }
+    $reply = Invoke-SentinelBrowserRequest -Client $Client -Url 'discoverApiVersion' -BrowserState $BrowserState
+    if ($reply.status -ne 'apiVersionSelected') {
+        $message = 'Sentinel Government API version discovery failed. Supply SentinelApiVersion only with a version confirmed for the selected Government workspace.'
+        if ($reply.status -eq 'httpError') { $message += " HTTP $($reply.httpStatus)." }
+        $exception = New-Object InvalidOperationException $message
+        $exception.Data['BrowserStatus'] = [string]$reply.status
+        if ($reply.status -eq 'httpError') { $exception.Data['HttpStatus'] = [int]$reply.httpStatus }
+        throw $exception
+    }
+    if (-not $reply.PSObject.Properties['apiVersion'] -or $reply.apiVersion -isnot [string]) {
+        throw 'Sentinel Government API version discovery returned an invalid version.'
+    }
+    Assert-SentinelApiVersion -Version $reply.apiVersion
+    if ($reply.apiVersion.EndsWith('-preview')) {
+        throw 'Sentinel Government API version discovery returned an invalid version.'
+    }
+    $Target.ApiVersion = $reply.apiVersion
+    $Target.ListUrl = "https://$($Target.ArmHost)$($Target.CollectionPath)?api-version=$($Target.ApiVersion)"
+    $Target.RequiresApiVersionDiscovery = $false
+    $Target.ApiVersionSource = 'SubscriptionProviderMetadata'
+    Assert-SentinelListUrl -Url $Target.ListUrl -Target $Target
+}
+
+function Test-SentinelFrameUrl {
+    param([string]$Url, [object]$Target)
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -ne 'https' -or -not $uri.IsDefaultPort -or $uri.UserInfo) {
+        return $false
+    }
+    return $uri.GetLeftPart([UriPartial]::Authority) -in $Target.BrowserOrigins
+}
+
+function Remove-SentinelSessionContexts {
+    param([hashtable]$BrowserState, [string]$SessionId)
+
+    foreach ($key in @($BrowserState.Contexts.Keys)) {
+        if ($BrowserState.Contexts[$key].SessionId -eq $SessionId) {
+            $BrowserState.Contexts.Remove($key)
+        }
+    }
+    if ($BrowserState.Active -and $BrowserState.Active.SessionId -eq $SessionId) {
+        $BrowserState.Active = $null
+    }
+}
+
+function Test-SentinelDetachedTargetError {
+    param([Management.Automation.ErrorRecord]$ErrorRecord)
+    return (Get-CdpFailureReason -ErrorRecord $ErrorRecord) -eq 'SessionUnavailable' -or
+        $ErrorRecord.Exception.Message -match 'No session with given id|Session with given id not found|Target closed|Session closed|No target with given id found'
+}
+
+function Get-CdpFailureReason {
+    param([Management.Automation.ErrorRecord]$ErrorRecord)
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        if ($exception.Data.Contains('CdpReason')) { return [string]$exception.Data['CdpReason'] }
+        $exception = $exception.InnerException
+    }
+    return ''
+}
+
+function Test-SentinelContextLoss {
+    param([Management.Automation.ErrorRecord]$ErrorRecord)
+    return (Get-CdpFailureReason -ErrorRecord $ErrorRecord) -eq 'ContextUnavailable' -or
+        $ErrorRecord.Exception.Message -match '^(Execution context was destroyed\.?|Cannot find context with specified id\.?|Cannot find default execution context\.?|Cannot find execution context\.?)$'
+}
+
+function Restore-SentinelControlledTarget {
+    param([CustomDetections.CdpClient]$Client, [hashtable]$BrowserState)
+
+    # Never choose another tab, endpoint, account, or an arbitrary matching portal.
+    # Target.getTargetInfo must still identify the exact page selected at launch.
+    if (-not $BrowserState.ContainsKey('ControlledTargetId') -or
+        [string]::IsNullOrWhiteSpace($BrowserState.ControlledTargetId)) { return $false }
+    try {
+        $description = Invoke-CdpCommand -Client $Client -Method 'Target.getTargetInfo' -Parameters @{
+            targetId = $BrowserState.ControlledTargetId
+        }
+    }
+    catch {
+        if (Test-SentinelDetachedTargetError -ErrorRecord $_) { return $false }
+        throw
+    }
+    $info = $description.PSObject.Properties['targetInfo']
+    if (-not $info -or -not $info.Value -or
+        -not $info.Value.PSObject.Properties['targetId'] -or
+        -not $info.Value.PSObject.Properties['type'] -or
+        -not $info.Value.PSObject.Properties['url'] -or
+        $info.Value.targetId -cne $BrowserState.ControlledTargetId -or
+        $info.Value.type -ne 'page' -or
+        -not (Test-SentinelFrameUrl -Url $info.Value.url -Target $BrowserState.Target) -or
+        ([Uri]$info.Value.url).Host -ine $BrowserState.Target.PortalHost) { return $false }
+
+    $oldRootSession = if ($BrowserState.ContainsKey('RootSessionId')) {
+        [string]$BrowserState.RootSessionId
+    } else { '' }
+    # Turning off auto attachment detaches its old child sessions. They must not
+    # remain eligible after a renderer swap or resume paused foreign descendants.
+    try {
+        Invoke-CdpCommand -Client $Client -Method 'Target.setAutoAttach' -SessionId $oldRootSession `
+            -Parameters @{ autoAttach = $false; waitForDebuggerOnStart = $false; flatten = $true } | Out-Null
+    }
+    catch { if (-not (Test-SentinelDetachedTargetError -ErrorRecord $_)) { throw } }
+    $attached = Invoke-CdpCommand -Client $Client -Method 'Target.attachToTarget' -Parameters @{
+        targetId = $BrowserState.ControlledTargetId; flatten = $true
+    }
+    if (-not $attached.PSObject.Properties['sessionId'] -or
+        [string]::IsNullOrWhiteSpace([string]$attached.sessionId)) {
+        throw 'Sentinel recovery did not return a controlled target session.'
+    }
+    $newRootSession = [string]$attached.sessionId
+    $BrowserState.Contexts.Clear()
+    $BrowserState.Sessions.Clear()
+    $BrowserState.Active = $null
+    $BrowserState.RootSessionId = $newRootSession
+    $BrowserState.Sessions[$newRootSession] = $true
+    Invoke-CdpCommand -Client $Client -Method 'Page.enable' -SessionId $newRootSession | Out-Null
+    Invoke-CdpCommand -Client $Client -Method 'Page.addScriptToEvaluateOnNewDocument' -SessionId $newRootSession `
+        -Parameters @{ source = $BrowserState.Observer } | Out-Null
+    Invoke-CdpCommand -Client $Client -Method 'Runtime.disable' -SessionId $newRootSession | Out-Null
+    Invoke-CdpCommand -Client $Client -Method 'Runtime.enable' -SessionId $newRootSession | Out-Null
+    Invoke-CdpCommand -Client $Client -Method 'Target.setAutoAttach' -SessionId $newRootSession -Parameters @{
+        autoAttach = $true; waitForDebuggerOnStart = $true; flatten = $true
+    } | Out-Null
+    return $true
+}
+
+function Update-SentinelBrowserContexts {
+    param([CustomDetections.CdpClient]$Client, [hashtable]$BrowserState,
+        [hashtable]$AuthenticationState)
+
+    foreach ($event in @(Get-CdpEvents -Client $Client)) {
+        $owner = if ($event.PSObject.Properties['sessionId']) { [string]$event.sessionId } else { '' }
+        if ($event.method -eq 'Fetch.requestPaused' -and -not $owner -and
+            $AuthenticationState -and $AuthenticationState.InterceptionEnabled) {
+            Complete-TargetUserRequest -Client $Client -Event $event -AuthenticationState $AuthenticationState
+        }
+        elseif ($event.method -eq 'Target.attachedToTarget') {
+            $sessionId = [string]$event.params.sessionId
+            # The explicit recovery attachment also emits an attached event.
+            if ($BrowserState.ContainsKey('RootSessionId') -and
+                $sessionId -eq $BrowserState.RootSessionId -and
+                $event.params.targetInfo.type -eq 'page' -and
+                $event.params.targetInfo.targetId -ceq $BrowserState.ControlledTargetId) { continue }
+            if ($event.params.targetInfo.type -ne 'iframe' -or
+                -not $BrowserState.Sessions.ContainsKey($owner)) {
+                try {
+                    Invoke-CdpCommand -Client $Client -Method 'Runtime.runIfWaitingForDebugger' -SessionId $sessionId | Out-Null
+                    Invoke-CdpCommand -Client $Client -Method 'Target.detachFromTarget' -SessionId $owner `
+                        -Parameters @{ sessionId = $sessionId } | Out-Null
+                }
+                catch { if (-not (Test-SentinelDetachedTargetError $_)) { throw } }
+                continue
+            }
+            # Attached iframe sessions are descendants of this controlled Edge page.
+            # Preload only the origin guarded observer. Dispatch later requires a verified live frame URL.
+            $BrowserState.Sessions[$sessionId] = $true
+            try {
+                Invoke-CdpCommand -Client $Client -Method 'Page.enable' -SessionId $sessionId | Out-Null
+                Invoke-CdpCommand -Client $Client -Method 'Page.addScriptToEvaluateOnNewDocument' -SessionId $sessionId `
+                    -Parameters @{ source = $BrowserState.Observer } | Out-Null
+                Invoke-CdpCommand -Client $Client -Method 'Runtime.enable' -SessionId $sessionId | Out-Null
+                Invoke-CdpCommand -Client $Client -Method 'Target.setAutoAttach' -SessionId $sessionId -Parameters @{
+                    autoAttach = $true; waitForDebuggerOnStart = $true; flatten = $true
+                } | Out-Null
+                Invoke-CdpCommand -Client $Client -Method 'Runtime.runIfWaitingForDebugger' -SessionId $sessionId | Out-Null
+            }
+            catch {
+                if (-not (Test-SentinelDetachedTargetError -ErrorRecord $_)) { throw }
+                Remove-SentinelSessionContexts -BrowserState $BrowserState -SessionId $sessionId
+                $BrowserState.Sessions.Remove($sessionId)
+            }
+        }
+        elseif ($event.method -eq 'Target.detachedFromTarget') {
+            $sessionId = [string]$event.params.sessionId
+            Remove-SentinelSessionContexts -BrowserState $BrowserState -SessionId $sessionId
+            $BrowserState.Sessions.Remove($sessionId)
+        }
+        elseif ($event.method -eq 'Runtime.executionContextsCleared') {
+            Remove-SentinelSessionContexts -BrowserState $BrowserState -SessionId $owner
+        }
+        elseif ($event.method -eq 'Runtime.executionContextDestroyed') {
+            $BrowserState.Contexts.Remove("$owner|$($event.params.executionContextId)")
+            if ($BrowserState.Active -and $BrowserState.Active.SessionId -eq $owner -and
+                $BrowserState.Active.ContextId -eq [int]$event.params.executionContextId) {
+                $BrowserState.Active = $null
+            }
+        }
+        elseif ($event.method -eq 'Runtime.executionContextCreated') {
+            $context = $event.params.context
+            $aux = $context.PSObject.Properties['auxData']
+            if ($aux -and $aux.Value.PSObject.Properties['isDefault'] -and $aux.Value.isDefault -and
+                $aux.Value.PSObject.Properties['frameId'] -and
+                [string]$context.origin -in $BrowserState.Target.BrowserOrigins -and
+                $BrowserState.Sessions.ContainsKey($owner)) {
+                $BrowserState.Contexts["$owner|$($context.id)"] = @{
+                    SessionId = $owner; ContextId = [int]$context.id
+                    FrameId = [string]$aux.Value.frameId; Origin = [string]$context.origin
+                }
+            }
+        }
+    }
+}
+
+function Find-SentinelReadyContext {
+    param([CustomDetections.CdpClient]$Client, [hashtable]$BrowserState)
+
+    $frames = @{}
+    $rootVerified = $false
+    $rootSession = if ($BrowserState.ContainsKey('RootSessionId')) { [string]$BrowserState.RootSessionId } else { '' }
+    foreach ($sessionId in @($BrowserState.Sessions.Keys)) {
+        try {
+            $tree = Invoke-CdpCommand -Client $Client -Method 'Page.getFrameTree' -SessionId $sessionId
+        }
+        catch {
+            if (-not (Test-SentinelDetachedTargetError $_)) { throw }
+            Remove-SentinelSessionContexts -BrowserState $BrowserState -SessionId $sessionId
+            if ($sessionId -eq $rootSession) { return $false }
+            $BrowserState.Sessions.Remove($sessionId)
+            continue
+        }
+        if ($sessionId -eq $rootSession -and (Test-SentinelFrameUrl -Url $tree.frameTree.frame.url -Target $BrowserState.Target)) {
+            $rootUri = [Uri]$tree.frameTree.frame.url
+            $rootVerified = $rootUri.Host -ieq $BrowserState.Target.PortalHost
+        }
+        function Register-SentinelFrame {
+            param([object]$Node)
+            $frames["$sessionId|$($Node.frame.id)"] = [string]$Node.frame.url
+            $children = $Node.PSObject.Properties['childFrames']
+            if ($children) {
+                foreach ($child in @($children.Value)) { Register-SentinelFrame -Node $child }
+            }
+        }
+        Register-SentinelFrame -Node $tree.frameTree
+    }
+    if (-not $rootVerified) { return $false }
+    foreach ($key in @($BrowserState.Contexts.Keys | Sort-Object)) {
+        if (-not $BrowserState.Contexts.ContainsKey($key)) { continue }
+        $context = $BrowserState.Contexts[$key]
+        $frameKey = "$($context.SessionId)|$($context.FrameId)"
+        if (-not $frames.ContainsKey($frameKey) -or
+            -not (Test-SentinelFrameUrl -Url $frames[$frameKey] -Target $BrowserState.Target) -or
+            ([Uri]$frames[$frameKey]).GetLeftPart([UriPartial]::Authority) -ne $context.Origin) {
+            continue
+        }
+        try {
+            # Newly attached frames may already have a document. Install the same guarded observer there.
+            $installation = Invoke-CdpCommand -Client $Client -Method 'Runtime.evaluate' -SessionId $context.SessionId -Parameters @{
+                expression = "(() => { if (typeof window.__sentinelExporter !== 'function') { $($BrowserState.Observer); } return true; })()"
+                contextId = $context.ContextId; returnByValue = $true
+            }
+            if ($installation.PSObject.Properties['exceptionDetails']) {
+                throw 'Sentinel observer installation failed in a verified browser context.'
+            }
+            $BrowserState.Active = $context
+            $state = Invoke-SentinelBrowserRequest -Client $Client -Url '' -BrowserState $BrowserState
+            if ($state.status -eq 'ready') { return $true }
+            if ($state.status -eq 'wrongIdentity') {
+                throw 'Sentinel portal ARM request used a different tenant, audience, or expired token.'
+            }
+        }
+        catch {
+            if (Test-SentinelDetachedTargetError -ErrorRecord $_) {
+                Remove-SentinelSessionContexts -BrowserState $BrowserState -SessionId $context.SessionId
+                if ($context.SessionId -ne $rootSession) { $BrowserState.Sessions.Remove($context.SessionId) }
+            }
+            elseif (-not (Test-SentinelContextLoss -ErrorRecord $_)) {
+                throw
+            }
+            $BrowserState.Contexts.Remove($key)
+        }
+    }
+    $BrowserState.Active = $null
+    return $false
+}
+
+function Get-SentinelFailureDiagnostic {
+    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$Stage)
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception.InnerException) { $exception = $exception.InnerException }
+    $type = $exception.GetType().FullName
+    $line = $ErrorRecord.InvocationInfo.ScriptLineNumber
+    $safeMessages = @(
+        'Sentinel recovery did not return a controlled target session.',
+        'Sentinel could not identify the original controlled Edge page.',
+        'Sentinel Government API version discovery returned an invalid version.',
+        'Sentinel DevTools reply was empty.',
+        'Sentinel has no verified active browser context.',
+        'Sentinel observer installation failed in a verified browser context.',
+        'Sentinel DevTools reply did not contain a remote result.',
+        'Sentinel DevTools reply did not contain a browser response object.',
+        'Sentinel DevTools reply did not contain a serialized browser response.',
+        'Sentinel DevTools reply contained invalid serialized response JSON.',
+        'Sentinel DevTools reply contained an unsupported browser status.',
+        'Sentinel DevTools reply did not contain a JSON response body.',
+        'Sentinel DevTools reply contained an invalid HTTP status.',
+        'Sentinel DevTools list reply contained a readiness status instead of a response.',
+        'Sentinel browser execution failed. No authentication data was saved.',
+        'Sentinel pagination left the selected cloud or workspace. No request was sent.',
+        'Sentinel pagination changed the API version. No request was sent.',
+        'Sentinel pagination repeated a page or exceeded the page limit.',
+        'Unsupported Sentinel list envelope. Expected an object containing a value array.',
+        'Unsupported Sentinel rule or resource outside the selected workspace.',
+        'Sentinel returned a duplicate rule ID. Export is incomplete.',
+        'Unsupported Sentinel nextLink.',
+        'Sentinel portal ARM request used a different tenant, audience, or expired token.',
+        'Sentinel portal did not expose authenticated ARM fetch or XHR in a verified portal context before timeout. Open Analytics in the selected workspace. No alternate authentication was attempted.',
+        'Sentinel account confirmation did not match. No Sentinel rules were exported.',
+        'Sentinel could not reacquire a verified authenticated context after navigation.'
+    )
+    $rawMessage = $ErrorRecord.Exception.Message
+    $message = 'Sentinel operation failed.'
+    if ($rawMessage -in $safeMessages -or
+        $exception.Data.Contains('CdpReason') -or
+        $rawMessage -match '^Sentinel list request failed: HTTP [1-5][0-9]{2}\. Check portal sign in and workspace RBAC\.$' -or
+        $rawMessage -match '^Sentinel browser request failed: (wrongPortal|unsafeUrl|authUnavailable|httpError|browserRequestFailed|observerUnavailable|wrongIdentity|unsupportedProviderMetadata|apiVersionUnavailable)\. No alternate authentication was attempted\.$' -or
+        $rawMessage -match '^Sentinel Government API version discovery failed\. Supply SentinelApiVersion only with a version confirmed for the selected Government workspace\.( HTTP [1-5][0-9]{2}\.)?$') {
+        $message = if ($exception.Data.Contains('CdpReason')) { $exception.Message } else { $rawMessage }
+    }
+    $diagnostic = [ordered]@{
+        stage = $Stage
+        exceptionType = $type
+        scriptLineNumber = $line
+        category = [string]$ErrorRecord.CategoryInfo.Category
+        message = $message
+    }
+    if ($exception.Data.Contains('CdpReason')) {
+        $diagnostic.cdpReason = $exception.Data['CdpReason']
+        $diagnostic.cdpMethod = $exception.Data['CdpMethod']
+        $diagnostic.cdpCode = $exception.Data['CdpCode']
+        if ($exception.Data.Contains('CdpMessage')) { $diagnostic.cdpMessage = $exception.Data['CdpMessage'] }
+    }
+    if ($exception.Data.Contains('BrowserStatus')) {
+        $diagnostic.browserStatus = $exception.Data['BrowserStatus']
+        if ($exception.Data.Contains('HttpStatus')) { $diagnostic.httpStatus = $exception.Data['HttpStatus'] }
+    }
+    if ($exception.Data.Contains('BrowserExceptionType')) {
+        $diagnostic.browserExceptionType = $exception.Data['BrowserExceptionType']
+    }
+    [pscustomobject]$diagnostic
+}
+
+function Write-NewExportFile {
+    param([string]$Path, [AllowEmptyString()][string]$Content)
+
+    $stream = New-Object IO.FileStream($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Content)
+        $stream.Write($bytes, 0, $bytes.Length)
+    }
+    finally { $stream.Dispose() }
+}
+
+function Initialize-ExportDirectory {
+    param([string]$Path, [string[]]$ProtectedPaths)
+
+    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    Assert-NoReparseAncestors -Path $fullPath
+    foreach ($protected in $ProtectedPaths) {
+        $protectedPath = [IO.Path]::GetFullPath($protected).TrimEnd('\', '/')
+        if ($fullPath -ieq $protectedPath -or
+            $protectedPath.StartsWith($fullPath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            $fullPath.StartsWith($protectedPath + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'OutputPath overlaps a protected source or browser profile path.'
+        }
+    }
+    # No Force: an existing directory, file or link must never be reused.
+    New-Item -ItemType Directory -Path $fullPath -ErrorAction Stop | Out-Null
+}
+
+function Assert-NoReparseAncestors {
+    param([string]$Path)
+
+    $current = [IO.Path]::GetFullPath($Path)
+    while ($current) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'A browser profile or output ancestor is a filesystem link. Use an isolated ordinary directory.'
+            }
+        }
+        $parent = Split-Path $current -Parent
+        if ($parent -eq $current) { break }
+        $current = $parent
+    }
+}
+
+function Export-SentinelRules {
+    param([CustomDetections.CdpClient]$Client, [object]$Target, [string]$OutputPath,
+        [string[]]$RuleNames, [hashtable]$BrowserState)
+
+    $capturePath = Join-Path $OutputPath 'captures'
+    $rulePath = Join-Path $OutputPath 'rules'
+    New-Item -ItemType Directory -Path $capturePath -ErrorAction Stop | Out-Null
+    New-Item -ItemType Directory -Path $rulePath -ErrorAction Stop | Out-Null
+    $rules = New-Object System.Collections.Generic.List[object]
+    $captures = New-Object System.Collections.Generic.List[object]
+    $errors = New-Object System.Collections.Generic.List[string]
+    $failureDetails = New-Object System.Collections.Generic.List[object]
+    $seenUrls = New-Object 'System.Collections.Generic.HashSet[string]'
+    $seenIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $usedNames = @{}
+    $requested = @($RuleNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Split(',') } |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+    $matched = @{}
+    $url = $Target.ListUrl
+    $pageNumber = 0
+    $stage = 'ValidateListUrl'
+    try {
+        while ($url) {
+            $stage = 'ValidateListUrl'
+            Assert-SentinelListUrl -Url $url -Target $Target
+            if (-not $seenUrls.Add($url) -or $pageNumber -ge 10000) {
+                throw 'Sentinel pagination repeated a page or exceeded the page limit.'
+            }
+            $stage = 'RequestListPage'
+            $reply = Invoke-SentinelBrowserRequest -Client $Client -Url $url -BrowserState $BrowserState
+            if ($reply.status -ne 'ok') {
+                if ($reply.status -eq 'httpError') {
+                    $exception = New-Object InvalidOperationException "Sentinel list request failed: HTTP $($reply.httpStatus). Check portal sign in and workspace RBAC."
+                    $exception.Data['BrowserStatus'] = 'httpError'
+                    $exception.Data['HttpStatus'] = [int]$reply.httpStatus
+                    throw $exception
+                }
+                $exception = New-Object InvalidOperationException "Sentinel browser request failed: $($reply.status). No alternate authentication was attempted."
+                $exception.Data['BrowserStatus'] = [string]$reply.status
+                throw $exception
+            }
+            $stage = 'ParseListPage'
+            $page = $reply.body | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $page -or $page -is [Array] -or
+                -not $page.PSObject.Properties['value'] -or $page.value -isnot [Array]) {
+                throw 'Unsupported Sentinel list envelope. Expected an object containing a value array.'
+            }
+            $pageNumber++
+            $stage = 'ValidateRuleResources'
+            # Validate every resource before writing this page, including rules excluded by a name filter.
+            foreach ($rule in $page.value) {
+                if ($null -eq $rule -or -not $rule.PSObject.Properties['id'] -or
+                    -not $rule.PSObject.Properties['kind'] -or
+                    -not $rule.PSObject.Properties['properties'] -or
+                    $rule.properties -isnot [pscustomobject] -or
+                    -not $rule.PSObject.Properties['name'] -or
+                    -not $rule.PSObject.Properties['type'] -or
+                    $rule.type -ine 'Microsoft.SecurityInsights/alertRules' -or
+                    [string]::IsNullOrWhiteSpace([string]$rule.kind) -or
+                    [string]::IsNullOrWhiteSpace([string]$rule.name) -or
+                    [string]$rule.id -ine ($Target.CollectionPath + '/' + [Uri]::EscapeDataString([string]$rule.name))) {
+                    throw 'Unsupported Sentinel rule or resource outside the selected workspace.'
+                }
+                if (-not $seenIds.Add([string]$rule.id)) {
+                    throw 'Sentinel returned a duplicate rule ID. Export is incomplete.'
+                }
+            }
+            $captureFile = 'page-{0:D4}.json' -f $pageNumber
+            $stage = 'SavePageCapture'
+            # Preserve rule bodies, but never persist opaque pagination links.
+            Write-NewExportFile -Path (Join-Path $capturePath $captureFile) -Content (
+                ConvertTo-Json -InputObject @($page.value) -Depth 100)
+            $captures.Add([pscustomobject]@{ file = "captures\$captureFile"; status = 200; ruleCount = $page.value.Count })
+            foreach ($rule in $page.value) {
+                $stage = 'SaveRuleFiles'
+                $displayName = Get-CaseInsensitiveProperty -InputObject $rule.properties -Name @('displayName')
+                if ([string]::IsNullOrWhiteSpace([string]$displayName)) { $displayName = [string]$rule.name }
+                if ($requested.Count -gt 0 -and $displayName -notin $requested) { continue }
+                $matched[[string]$displayName] = $true
+                $baseName = ConvertTo-SafeFileName -Name $displayName
+                $stem = $baseName
+                $suffix = 2
+                while ($usedNames.ContainsKey($stem)) { $stem = "$baseName-$suffix"; $suffix++ }
+                $usedNames[$stem] = $true
+                Write-NewExportFile -Path (Join-Path $rulePath "$stem.json") -Content (
+                    ConvertTo-Json -InputObject $rule -Depth 100)
+                $query = Get-CaseInsensitiveProperty -InputObject $rule.properties -Name @('query')
+                $queryFile = $null
+                if (-not [string]::IsNullOrWhiteSpace([string]$query)) {
+                    $queryFile = "rules\$stem.kql"
+                    Write-NewExportFile -Path (Join-Path $OutputPath $queryFile) -Content ([string]$query)
+                }
+                $rules.Add([pscustomobject]@{
+                    name = $displayName; key = $rule.id; kind = $rule.kind
+                    file = "rules\$stem.json"; queryFile = $queryFile
+                })
+            }
+            $next = $page.PSObject.Properties['nextLink']
+            $stage = 'ReadNextLink'
+            if ($next -and $null -ne $next.Value -and $next.Value -isnot [string]) {
+                throw 'Unsupported Sentinel nextLink.'
+            }
+            $url = if ($next) { [string]$next.Value } else { $null }
+        }
+    }
+    catch {
+        # Keep stage, original exception type and source line, but never raw exception text or JSON.
+        $diagnostic = Get-SentinelFailureDiagnostic -ErrorRecord $_ -Stage $stage
+        $failureDetails.Add($diagnostic)
+        $errors.Add(('{0} Stage: {1}; exception: {2}; line: {3}.' -f
+            $diagnostic.message, $diagnostic.stage, $diagnostic.exceptionType, $diagnostic.scriptLineNumber))
+    }
+    $unmatched = @($requested | Where-Object { -not $matched.ContainsKey($_) })
+    $manifest = [pscustomobject]@{
+        exportedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+        source = 'Sentinel'; tenantId = $Target.TenantId; workspaceResourceId = $Target.ResourceId
+        apiVersion = $Target.ApiVersion; apiVersionSource = $Target.ApiVersionSource
+        ruleCount = $rules.Count; captureCount = $captures.Count
+        browserOrigin = if ($BrowserState -and $BrowserState.Active) { $BrowserState.Active.Origin } else { $null }
+        browserContextRecoveries = if ($BrowserState -and $BrowserState.ContainsKey('RecoveredContextCount')) {
+            $BrowserState.RecoveredContextCount
+        } else { 0 }
+        complete = ($errors.Count -eq 0 -and $unmatched.Count -eq 0)
+        requestedRuleNames = $requested; unmatchedRuleNames = $unmatched
+        errors = $errors.ToArray(); failureDetails = $failureDetails.ToArray()
+        rules = $rules.ToArray(); captures = $captures.ToArray()
+    }
+    Write-NewExportFile -Path (Join-Path $OutputPath 'manifest.json') -Content (
+        ConvertTo-Json -InputObject $manifest -Depth 100)
+    return $manifest
+}
+
 function ConvertTo-SafeFileName {
     param(
         [Parameter(Mandatory = $true)]
@@ -403,6 +1348,9 @@ function ConvertTo-SafeFileName {
     $escapedCharacters = [Regex]::Escape((-join $invalidCharacters))
     $safeName = [Regex]::Replace($Name, "[$escapedCharacters]", '_')
     $safeName = [Regex]::Replace($safeName, '\s+', ' ').Trim().TrimEnd('.')
+    if ($safeName -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)') {
+        $safeName = '_' + $safeName
+    }
 
     if ([string]::IsNullOrWhiteSpace($safeName)) {
         $safeName = 'unnamed-rule'
@@ -615,14 +1563,44 @@ function Invoke-CdpCommand {
 
         [hashtable]$Parameters = @{},
 
-        [int]$TimeoutMilliseconds = 30000
+        [int]$TimeoutMilliseconds = 30000,
+
+        [string]$SessionId
     )
 
     $parametersJson = $Parameters | ConvertTo-Json -Depth 20 -Compress
-    $response = $Client.Call($Method, $parametersJson, $TimeoutMilliseconds) | ConvertFrom-Json
+    $responseJson = if ($SessionId) {
+        $Client.Call($Method, $parametersJson, $TimeoutMilliseconds, $SessionId)
+    } else {
+        $Client.Call($Method, $parametersJson, $TimeoutMilliseconds)
+    }
+    return ConvertFrom-CdpResponse -ResponseJson $responseJson -Method $Method
+}
+
+function ConvertFrom-CdpResponse {
+    param([string]$ResponseJson, [string]$Method)
+    $response = $ResponseJson | ConvertFrom-Json -ErrorAction Stop
     $errorProperty = $response.PSObject.Properties['error']
     if ($null -ne $errorProperty) {
-        throw "DevTools command '$Method' failed: $($errorProperty.Value.message)"
+        $protocolError = $errorProperty.Value
+        $reason = switch -Regex ([string]$protocolError.message) {
+            '^(Execution context was destroyed\.?|Execution context with given id not found\.?|Cannot find context with specified (unique )?id\.?|Cannot find context with id [0-9]+\.?|Cannot find execution context with specified id\.?|Cannot find default execution context\.?|Cannot find execution context\.?)$' { 'ContextUnavailable'; break }
+            '^Promise was collected\.?$' { 'PromiseCollected'; break }
+            '^(Object couldn.t be returned by value\.?|Object reference chain is too long\.?)$' { 'SerializationFailed'; break }
+            '^Invalid parameters\.?$' { 'InvalidParameters'; break }
+            '^(No session with given id|Session with given id not found|Target closed|Session closed|No target with given id found|Inspected target navigated or closed)\.?$' { 'SessionUnavailable'; break }
+            default { 'OtherProtocolError' }
+        }
+        $exception = New-Object InvalidOperationException "DevTools command '$Method' failed: $reason."
+        $exception.Data['CdpReason'] = $reason
+        $exception.Data['CdpMethod'] = $Method
+        if ($reason -ne 'OtherProtocolError') { $exception.Data['CdpMessage'] = [string]$protocolError.message }
+        $codeProperty = $protocolError.PSObject.Properties['code']
+        $exception.Data['CdpCode'] = if ($codeProperty -and
+            ($codeProperty.Value -is [int] -or $codeProperty.Value -is [long])) {
+            [int]$codeProperty.Value
+        } else { $null }
+        throw $exception
     }
 
     return $response.PSObject.Properties['result'].Value
@@ -974,7 +1952,9 @@ function Get-PortalCustomDetections {
         [Parameter(Mandatory = $true)]
         [hashtable]$Headers,
 
-        [string[]]$DetectionNames = @()
+        [string[]]$DetectionNames = @(),
+
+        [Guid]$ExpectedTenantId
     )
 
     $listUrlBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($ListUrl))
@@ -1000,6 +1980,11 @@ function Get-PortalCustomDetections {
   const listUrl = new TextDecoder().decode(
     Uint8Array.from(atob("__LIST_URL_BASE64__"), character => character.charCodeAt(0))
   );
+  if (new URL(listUrl, location.href).origin !== location.origin)
+    throw new Error("The MDE list request left the selected portal.");
+  if ("__EXPECTED_TENANT__" !== "00000000-0000-0000-0000-000000000000" &&
+      tenantId.toLowerCase() !== "__EXPECTED_TENANT__")
+    throw new Error("The MDE page tenant changed. No request was sent.");
   const headers = JSON.parse(new TextDecoder().decode(
     Uint8Array.from(atob("__HEADERS_BASE64__"), character => character.charCodeAt(0))
   ));
@@ -1012,6 +1997,45 @@ function Get-PortalCustomDetections {
   const list = await listResponse.json();
   if (!Array.isArray(list)) {
     throw new Error("The rule list response was not an array.");
+  }
+
+  // The unified portal list also includes Sentinel rules from other workspaces.
+  // Only the observed Defender tuple belongs to this detail API.
+  const sourceSelection = {
+    defenderCount: 0, legacyCount: 0, excludedSentinelCount: 0, unsupportedCount: 0
+  };
+  const eligible = [];
+  const errors = [];
+  const metadataFields = ["UsxSourceType", "UsxResourceType", "SourceType"];
+  for (let index = 0; index < list.length; index++) {
+    const summary = list[index];
+    let classification = "unsupported";
+    if (summary && typeof summary === "object" && !Array.isArray(summary)) {
+      const keys = Object.keys(summary);
+      const fields = metadataFields.map(field =>
+        keys.filter(key => key.toLowerCase() === field.toLowerCase()));
+      const hasMetadata = fields.some(matches => matches.length > 0) ||
+        keys.some(key => key.toLowerCase() === "detectionrulesource");
+      if (!hasMetadata) {
+        classification = "legacy";
+      } else if (fields.every(matches => matches.length === 1)) {
+        const [source, resource, sourceType] = fields.map(matches => summary[matches[0]]);
+        if (source === "Defender" && resource === "DefenderCustomDetectionRule" && sourceType === 0)
+          classification = "defender";
+        else if (source === "LogAnalytics" && resource === "SentinelAnalyticsRule" && sourceType === 1)
+          classification = "sentinel";
+      }
+    }
+    if (classification === "defender" || classification === "legacy") {
+      sourceSelection[classification === "defender" ? "defenderCount" : "legacyCount"]++;
+      eligible.push(summary);
+    } else if (classification === "sentinel") {
+      sourceSelection.excludedSentinelCount++;
+    } else {
+      sourceSelection.unsupportedCount++;
+      errors.push({ index, stage: "classifySummary",
+        error: "Unsupported rule summary source metadata. No detail request was sent." });
+    }
   }
 
   const rawRequestedNames = JSON.parse(new TextDecoder().decode(
@@ -1027,8 +2051,8 @@ function Get-PortalCustomDetections {
   ).values());
   const requestedKeys = new Set(requestedNames.map(name => name.toLocaleLowerCase()));
   const selected = requestedNames.length === 0
-    ? list
-    : list.filter(rule => requestedKeys.has(
+    ? eligible
+    : eligible.filter(rule => requestedKeys.has(
         String(rule.Name ?? rule.name ?? "").toLocaleLowerCase()
       ));
   const matchedKeys = new Set(selected.map(rule =>
@@ -1037,7 +2061,6 @@ function Get-PortalCustomDetections {
   const notFound = requestedNames.filter(name => !matchedKeys.has(name.toLocaleLowerCase()));
 
   const rules = new Array(selected.length);
-  const errors = [];
   let nextIndex = 0;
 
   async function worker() {
@@ -1070,6 +2093,7 @@ function Get-PortalCustomDetections {
 
   await Promise.all(Array.from({ length: Math.min(4, Math.max(1, selected.length)) }, worker));
   return JSON.stringify({
+    sourceSelection,
     requestedNames,
     notFound,
     summaries: selected,
@@ -1080,7 +2104,8 @@ function Get-PortalCustomDetections {
 '@
     $expression = $expression.Replace('__LIST_URL_BASE64__', $listUrlBase64).
         Replace('__HEADERS_BASE64__', $headersBase64).
-        Replace('__DETECTION_NAMES_BASE64__', $detectionNamesBase64)
+        Replace('__DETECTION_NAMES_BASE64__', $detectionNamesBase64).
+        Replace('__EXPECTED_TENANT__', $ExpectedTenantId.ToString('D'))
 
     $result = Invoke-CdpCommand -Client $Client -Method 'Runtime.evaluate' -Parameters @{
         expression = $expression
@@ -1132,6 +2157,17 @@ $client = $null
 $requests = @{}
 $responses = @{}
 $authenticationState = $null
+$mdeComplete = $false
+$mdeFailure = $false
+$sentinelManifest = $null
+$originalOutputPath = $OutputPath
+
+# Reserve a fresh output directory before changing profiles or starting Edge.
+Assert-NoReparseAncestors -Path $ProfilePath
+Initialize-ExportDirectory -Path $OutputPath -ProtectedPaths @(
+    $PSCommandPath, (Join-Path $PSScriptRoot 'Get-CustomDetections.md'),
+    $ProfilePath, (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data')
+)
 
 try {
     $browserUserDataPath = $ProfilePath
@@ -1156,14 +2192,20 @@ try {
         New-Item -ItemType Directory -Path $browserUserDataPath -Force | Out-Null
     }
 
-    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
-    $capturePath = Join-Path $OutputPath 'captures'
-    $rulePath = Join-Path $OutputPath 'rules'
-    New-Item -ItemType Directory -Path $capturePath -Force | Out-Null
-    New-Item -ItemType Directory -Path $rulePath -Force | Out-Null
+    if ($ExportMode -ne 'Sentinel') {
+        if ($ExportMode -eq 'Both') {
+            $OutputPath = Join-Path $originalOutputPath 'MDE'
+            New-Item -ItemType Directory -Path $OutputPath | Out-Null
+        }
+        $capturePath = Join-Path $OutputPath 'captures'
+        $rulePath = Join-Path $OutputPath 'rules'
+        New-Item -ItemType Directory -Path $capturePath | Out-Null
+        New-Item -ItemType Directory -Path $rulePath | Out-Null
+    }
 
     $edgePath = Resolve-EdgeExecutable
     $port = Get-AvailableTcpPort
+    Write-Verbose "Edge DevTools endpoint: http://127.0.0.1:$port"
     $edgeArguments = @(
         "--remote-debugging-port=$port",
         "--user-data-dir=`"$browserUserDataPath`"",
@@ -1205,6 +2247,8 @@ try {
         maxPostDataSize = 1000000
     } | Out-Null
 
+    if ($ExportMode -ne 'Sentinel') {
+    try {
     if ($UserPrincipalName) {
         $frameTree = Invoke-CdpCommand -Client $client -Method 'Page.getFrameTree'
         $authenticationState = @{
@@ -1246,7 +2290,7 @@ try {
             $pageState = Get-PageState -Client $client
         }
         catch {
-            if ($UserPrincipalName -and $_.Exception.Message -match 'Execution context was destroyed|Cannot find context|Cannot find default execution context') {
+            if ($UserPrincipalName -and (Test-SentinelContextLoss -ErrorRecord $_)) {
                 Write-Verbose 'The sign in page is navigating. Waiting for its next execution context.'
                 Start-Sleep -Milliseconds 200
                 continue
@@ -1254,7 +2298,16 @@ try {
             throw
         }
 
-        if ($pageState.url -match '^https://security\.apps\.mil/v2/custom_detection' -and
+        $readyUri = $null
+        $pageTenant = if ([Uri]::TryCreate($pageState.url, [UriKind]::Absolute, [ref]$readyUri)) {
+            @($readyUri.Query.TrimStart('?').Split('&') | Where-Object { ($_ -split '=', 2)[0] -eq 'tid' })
+        } else { @() }
+        if ($null -ne $readyUri -and
+            $readyUri.Scheme -eq 'https' -and $readyUri.Host -ieq $defenderHost -and
+            $readyUri.IsDefaultPort -and -not $readyUri.UserInfo -and
+            $readyUri.AbsolutePath -eq '/v2/custom_detection' -and
+            @($pageTenant).Count -eq 1 -and
+            [Uri]::UnescapeDataString((@($pageTenant)[0] -split '=', 2)[1]) -ieq $TenantId.ToString('D') -and
             $pageState.readyState -eq 'complete' -and
             (-not $UserPrincipalName -or $authenticationState.AuthorizationRequests -gt 0)) {
             $pageReady = $true
@@ -1308,6 +2361,7 @@ try {
         Confirm-TargetUser -UserPrincipalName $UserPrincipalName
     }
     Write-Host 'Downloading full details for the selected custom detection rules...' -ForegroundColor Cyan
+    Assert-MdeListUrl -Url ([string]$listRequestEntry.Value.url) -PortalHost $defenderHost
     $requestId = [string]$listRequestEntry.Key
     $requestHeaders = $requests["headers:$requestId"]
     if ($null -eq $requestHeaders) {
@@ -1326,15 +2380,20 @@ try {
         -Client $client `
         -ListUrl ([string]$listRequestEntry.Value.url) `
         -Headers $replayHeaders `
-        -DetectionNames $DetectionNames
+        -DetectionNames $DetectionNames `
+        -ExpectedTenantId $TenantId
 
     $rulesByKey = @{}
+    $selectedRuleKeys = @{}
+    foreach ($summary in @($portalExport.summaries)) {
+        $selectedRuleKeys[(Get-StableRuleKey -Rule $summary)] = $true
+    }
     $captureIndex = New-Object System.Collections.Generic.List[object]
     $captureNumber = 0
 
     $summaryCaptureFile = Join-Path $capturePath 'rules-unified.json'
-    @($portalExport.summaries) | ConvertTo-Json -Depth 100 |
-        Set-Content -LiteralPath $summaryCaptureFile -Encoding UTF8
+    Write-NewExportFile -Path $summaryCaptureFile -Content (
+        ConvertTo-Json -InputObject @($portalExport.summaries) -Depth 100)
     $captureIndex.Add([pscustomobject]@{
         file = 'captures\rules-unified.json'
         method = 'GET'
@@ -1344,8 +2403,8 @@ try {
     })
 
     $detailsCaptureFile = Join-Path $capturePath 'rule-details.json'
-    @($portalExport.rules) | ConvertTo-Json -Depth 100 |
-        Set-Content -LiteralPath $detailsCaptureFile -Encoding UTF8
+    Write-NewExportFile -Path $detailsCaptureFile -Content (
+        ConvertTo-Json -InputObject @($portalExport.rules) -Depth 100)
     $captureIndex.Add([pscustomobject]@{
         file = 'captures\rule-details.json'
         method = 'GET'
@@ -1377,13 +2436,21 @@ try {
         $captureNumber++
         $captureFile = 'response-{0:D4}.json' -f $captureNumber
         $captureFilePath = Join-Path $capturePath $captureFile
-        $parsedBody | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $captureFilePath -Encoding UTF8
+        Write-NewExportFile -Path $captureFilePath -Content (
+            ConvertTo-Json -InputObject $parsedBody -Depth 100)
 
         $request = $requests[$requestId]
         $response = $responses[$requestId]
         $foundRules = @(Find-CustomDetectionRule -InputObject $parsedBody)
         foreach ($rule in $foundRules) {
-            $rulesByKey[(Get-StableRuleKey -Rule $rule)] = $rule
+            $key = Get-StableRuleKey -Rule $rule
+            # Detail responses are authoritative. Captures must not bypass name selection.
+            if (-not $rulesByKey.ContainsKey($key) -and
+                $selectedRuleKeys.ContainsKey($key) -and
+                ((@($portalExport.requestedNames).Count -eq 0) -or
+                    (Get-RuleDisplayName -Rule $rule) -in @($portalExport.requestedNames))) {
+                $rulesByKey[$key] = $rule
+            }
         }
 
         $captureIndex.Add([pscustomobject]@{
@@ -1412,14 +2479,11 @@ try {
         }
         $usedFileNames[$fileName.ToLowerInvariant()] = $true
 
-        $rule | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath (Join-Path $rulePath $fileName) -Encoding UTF8
+        Write-NewExportFile -Path (Join-Path $rulePath $fileName) -Content (
+            ConvertTo-Json -InputObject $rule -Depth 100)
         $queryFileName = "$fileStem.kql"
         $queryText = Get-RuleQueryText -Rule $rule
-        [IO.File]::WriteAllText(
-            (Join-Path $rulePath $queryFileName),
-            $queryText,
-            (New-Object Text.UTF8Encoding($false))
-        )
+        Write-NewExportFile -Path (Join-Path $rulePath $queryFileName) -Content $queryText
         $ruleIndex.Add([pscustomobject]@{
             name = $displayName
             key = $entry.Key
@@ -1436,27 +2500,176 @@ try {
         captureCount = $captureIndex.Count
         complete = (
             @($portalExport.errors).Count -eq 0 -and
-            @($portalExport.notFound).Count -eq 0
+            @($portalExport.notFound).Count -eq 0 -and
+            $ruleIndex.Count -eq @($portalExport.summaries).Count
         )
         requestedDetectionNames = @($portalExport.requestedNames)
         unmatchedDetectionNames = @($portalExport.notFound)
+        sourceSelection = Get-CaseInsensitiveProperty -InputObject $portalExport -Name @('sourceSelection')
         errors = @($portalExport.errors)
         rules = $ruleIndex.ToArray()
         captures = $captureIndex.ToArray()
     }
-    $manifest | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath (Join-Path $OutputPath 'manifest.json') -Encoding UTF8
+    Write-NewExportFile -Path (Join-Path $OutputPath 'manifest.json') -Content (
+        ConvertTo-Json -InputObject $manifest -Depth 100)
 
+    if ($null -ne $manifest.sourceSelection -and $manifest.sourceSelection.excludedSentinelCount -gt 0) {
+        Write-Host "Excluded $($manifest.sourceSelection.excludedSentinelCount) Sentinel summaries from MDE selection. Sentinel export uses only the selected ARM workspace."
+    }
     if (@($portalExport.notFound).Count -gt 0) {
         throw "The following requested detection name(s) were not found: $(@($portalExport.notFound) -join ', ')"
     }
-    if ($ruleIndex.Count -eq 0) {
+    if ($ruleIndex.Count -eq 0 -and @($portalExport.summaries).Count -gt 0) {
         throw "No custom detection rules were recognized. Raw JSON captures were saved to '$capturePath' for schema analysis."
     }
     if (@($portalExport.errors).Count -gt 0) {
-        throw "Exported $($ruleIndex.Count) rule(s), but $(@($portalExport.errors).Count) rule detail request(s) failed. See manifest.json."
+        throw "Exported $($ruleIndex.Count) rule(s), but $(@($portalExport.errors).Count) source classification or detail error(s) occurred. See manifest.json."
+    }
+    if (-not $manifest.complete) {
+        throw 'Some MDE rule details were not recognized. See manifest.json.'
     }
 
+    $mdeComplete = $true
     Write-Host "Exported $($ruleIndex.Count) custom detection rule(s) to '$OutputPath'." -ForegroundColor Green
+    }
+    catch {
+        $mdeFailure = $true
+        if (-not (Test-Path -LiteralPath (Join-Path $OutputPath 'manifest.json'))) {
+            Write-NewExportFile -Path (Join-Path $OutputPath 'manifest.json') -Content (
+                ConvertTo-Json -InputObject ([pscustomobject]@{
+                    source = 'MDE'; complete = $false; ruleCount = 0
+                    errors = @('MDE browser export failed before a complete manifest was available.')
+                    rules = @(); captures = @()
+                }) -Depth 100)
+        }
+        if ($ExportMode -eq 'MDE') { throw }
+        Write-Warning 'MDE export is incomplete. Continuing with Sentinel in the same Edge session.'
+    }
+    }
+
+    if ($ExportMode -ne 'MDE') {
+        $OutputPath = if ($ExportMode -eq 'Both') {
+            $directory = Join-Path $originalOutputPath 'Sentinel'
+            New-Item -ItemType Directory -Path $directory | Out-Null
+            $directory
+        } else { $originalOutputPath }
+        $sentinelTarget = Get-SentinelTarget -TenantId $TenantId -SubscriptionId $SubscriptionId `
+            -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -CloudEnvironment $CloudEnvironment `
+            -SentinelApiVersion $SentinelApiVersion
+        $sentinelStage = 'InitializeBrowserObserver'
+        try {
+            # Stop collecting network headers. Sentinel authentication remains in the page closure.
+            Invoke-CdpCommand -Client $client -Method 'Network.disable' | Out-Null
+            $requests.Clear()
+            $responses.Clear()
+            if ($authenticationState -and $authenticationState.InterceptionEnabled) {
+                Invoke-CdpCommand -Client $client -Method 'Fetch.disable' | Out-Null
+            }
+            $observer = New-SentinelBrowserObserver -Target $sentinelTarget
+            $controlledPage = Invoke-CdpCommand -Client $client -Method 'Target.getTargetInfo'
+            if (-not $controlledPage.PSObject.Properties['targetInfo'] -or
+                $controlledPage.targetInfo.type -ne 'page' -or
+                $controlledPage.targetInfo.targetId -cne [string]$target.id) {
+                throw 'Sentinel could not identify the original controlled Edge page.'
+            }
+            $sentinelBrowserState = @{
+                Target = $sentinelTarget; Observer = $observer
+                Sessions = @{ '' = $true }; Contexts = @{}; Active = $null
+                ControlledTargetId = [string]$controlledPage.targetInfo.targetId; RootSessionId = ''
+            }
+            Invoke-CdpCommand -Client $client -Method 'Page.addScriptToEvaluateOnNewDocument' -Parameters @{
+                source = $observer
+            } | Out-Null
+            Invoke-CdpCommand -Client $client -Method 'Runtime.disable' | Out-Null
+            Invoke-CdpCommand -Client $client -Method 'Runtime.enable' | Out-Null
+            Invoke-CdpCommand -Client $client -Method 'Target.setAutoAttach' -Parameters @{
+                autoAttach = $true; waitForDebuggerOnStart = $true; flatten = $true
+            } | Out-Null
+            $authenticationState = $null
+            if ($UserPrincipalName) {
+                $frameTree = Invoke-CdpCommand -Client $client -Method 'Page.getFrameTree'
+                $authenticationState = @{
+                    FrameId = [string]$frameTree.frameTree.frame.id; UserPrincipalName = $UserPrincipalName
+                    AuthorizationRequests = 0; InterceptionEnabled = $true
+                }
+                Invoke-CdpCommand -Client $client -Method 'Fetch.enable' -Parameters @{
+                    patterns = @(
+                        @{ urlPattern = 'https://login.microsoftonline.us/*'; resourceType = 'Document'; requestStage = 'Request' },
+                        @{ urlPattern = 'https://login.microsoftonline.com/*'; resourceType = 'Document'; requestStage = 'Request' }
+                    )
+                } | Out-Null
+            }
+            $sentinelStage = 'NavigateAzurePortal'
+            $sentinelUrlJson = ConvertTo-Json -InputObject $sentinelTarget.PortalUrl -Compress
+            Invoke-CdpCommand -Client $client -Method 'Runtime.evaluate' -Parameters @{
+                expression = "setTimeout(() => location.assign($sentinelUrlJson), 100); true"; returnByValue = $true
+            } | Out-Null
+            Write-Host 'In Edge, complete normal Azure portal sign in and open Microsoft Sentinel Analytics for the selected workspace.' -ForegroundColor Cyan
+            Write-Host "Selected workspace: $($sentinelTarget.ResourceId)" -ForegroundColor Cyan
+            $deadline = (Get-Date).AddSeconds($LoginTimeoutSeconds)
+            $ready = $false
+            $sentinelStage = 'WaitForPortalAuthentication'
+            while ((Get-Date) -lt $deadline) {
+                Update-SentinelBrowserContexts -Client $client -BrowserState $sentinelBrowserState `
+                    -AuthenticationState $authenticationState
+                $ready = Find-SentinelReadyContext -Client $client -BrowserState $sentinelBrowserState
+                if ($ready) { break }
+                Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) {
+                throw 'Sentinel portal did not expose authenticated ARM fetch or XHR in a verified portal context before timeout. Open Analytics in the selected workspace. No alternate authentication was attempted.'
+            }
+            Write-Verbose "Using verified portal browser origin: $($sentinelBrowserState.Active.Origin)"
+            if ($authenticationState) {
+                $sentinelStage = 'FinishAccountTargeting'
+                Invoke-CdpCommand -Client $client -Method 'Fetch.disable' | Out-Null
+                $authenticationState.InterceptionEnabled = $false
+            }
+            if ($UserPrincipalName) {
+                $sentinelStage = 'ConfirmPortalAccount'
+                Write-Host 'Open the account menu inside the Azure portal, not the Edge toolbar.' -ForegroundColor Cyan
+                $observed = Read-Host 'Enter the full Azure portal account email, or CANCEL'
+                if (-not [string]::Equals($observed.Trim(), $UserPrincipalName, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw 'Sentinel account confirmation did not match. No Sentinel rules were exported.'
+                }
+            }
+            if ($sentinelTarget.RequiresApiVersionDiscovery) {
+                $sentinelStage = 'DiscoverGovernmentApiVersion'
+                Resolve-SentinelApiVersion -Client $client -Target $sentinelTarget -BrowserState $sentinelBrowserState
+            }
+            $sentinelStage = 'ExportRuleCollection'
+            $sentinelManifest = Export-SentinelRules -Client $client -Target $sentinelTarget `
+                -OutputPath $OutputPath -RuleNames $SentinelRuleNames -BrowserState $sentinelBrowserState
+        }
+        catch {
+            $diagnostic = Get-SentinelFailureDiagnostic -ErrorRecord $_ -Stage $sentinelStage
+            $message = '{0} Stage: {1}; exception: {2}; line: {3}.' -f
+                $diagnostic.message, $diagnostic.stage, $diagnostic.exceptionType, $diagnostic.scriptLineNumber
+            $sentinelManifest = [pscustomobject]@{
+                source = 'Sentinel'; complete = $false; ruleCount = 0
+                errors = @($message); failureDetails = @($diagnostic); rules = @(); captures = @()
+            }
+            # An export manifest may already exist after a filesystem failure. Never replace it.
+            if (Test-Path -LiteralPath (Join-Path $OutputPath 'manifest.json')) { throw }
+            Write-NewExportFile -Path (Join-Path $OutputPath 'manifest.json') -Content (
+                ConvertTo-Json -InputObject $sentinelManifest -Depth 100)
+        }
+    }
+    if ($ExportMode -eq 'Both') {
+        $combined = [pscustomobject]@{
+            exportedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+            exportMode = $ExportMode; complete = ($mdeComplete -and $sentinelManifest.complete)
+            MDE = [pscustomobject]@{ complete = $mdeComplete; failed = $mdeFailure; manifest = 'MDE\manifest.json' }
+            Sentinel = [pscustomobject]@{ complete = $sentinelManifest.complete; manifest = 'Sentinel\manifest.json' }
+        }
+        Write-NewExportFile -Path (Join-Path $originalOutputPath 'manifest.json') -Content (
+            ConvertTo-Json -InputObject $combined -Depth 100)
+        if (-not $combined.complete) { throw 'Combined export is incomplete. Successful files were retained. See the source manifests.' }
+    }
+    if ($sentinelManifest) {
+        if (-not $sentinelManifest.complete) { throw "Sentinel export is incomplete: $($sentinelManifest.errors -join ' ') See manifest.json." }
+        Write-Host "Exported $($sentinelManifest.ruleCount) Sentinel analytics rule(s) to '$OutputPath'." -ForegroundColor Green
+    }
 }
 finally {
     if ($null -ne $client) {
