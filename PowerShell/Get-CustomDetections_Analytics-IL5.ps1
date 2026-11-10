@@ -76,10 +76,14 @@ This parameter is required.
 
 .PARAMETER UserPrincipalName
 Requests this account at Microsoft sign in using login_hint and prompt=login.
+If omitted, prompts for the intended account before starting Edge, unless
+ReuseCachedProfile is explicitly selected.
 Uses a new isolated profile without importing browser authentication. Requires
-you to confirm the account shown in Defender before exporting. This is a user
-confirmation, not automatic verification of the portal identity. Cannot override
-organizational authentication policy. Does not require InPrivate browsing.
+you to confirm the account shown in each selected portal before exporting.
+This is a user confirmation, not automatic verification of the portal identity.
+A fresh profile does not disable Windows broker SSO or force an account chooser.
+Cannot override organizational authentication policy. Uses normal Edge, not
+InPrivate browsing.
 
 .PARAMETER DetectionNames
 Specifies which custom detection rules to export by exact name. Provide either
@@ -93,14 +97,21 @@ the script's exports directory.
 
 .PARAMETER ProfilePath
 Specifies the isolated Edge user-data directory used by the exporter. The
-default is %LOCALAPPDATA%\Get-CustomDetections\EdgeProfile.
-With UserPrincipalName, the default is a unique directory for this run, and an
-explicit directory must not already exist. Existing profiles are not deleted.
+default is a unique directory for this run. An explicit directory must not
+already exist unless ReuseCachedProfile is supplied. Existing profiles are
+not deleted by default.
+
+.PARAMETER ReuseCachedProfile
+Explicitly opts into cached identity use without account targeting or account
+confirmation. Uses ProfilePath, or the legacy default
+%LOCALAPPDATA%\Get-CustomDetections\EdgeProfile when omitted. Cannot be combined
+with UserPrincipalName. Required with SelectEdgeProfile or ResetProfile.
+Verify the account inside each portal yourself before choosing this mode.
 
 .PARAMETER SelectEdgeProfile
 Imports the Edge profile selected by EdgeProfileDirectory into the isolated
-exporter profile. Close all Edge windows before the first import or a profile
-reset. The source Edge profile is not modified.
+exporter profile. Requires ReuseCachedProfile. Close all Edge windows before
+the first import or a profile reset. The source Edge profile is not modified.
 
 .PARAMETER EdgeProfileDirectory
 Specifies the Edge profile directory to import, such as Default or Profile 2.
@@ -122,7 +133,8 @@ sign-in on the next run.
 
 .PARAMETER ResetProfile
 Deletes and recreates the isolated exporter profile. When combined with
-SelectEdgeProfile, the selected source profile is imported again.
+SelectEdgeProfile, the selected source profile is imported again. Requires
+ReuseCachedProfile.
 
 .EXAMPLE
 .\Get-CustomDetections.ps1 -TenantId '00000000-0000-0000-0000-000000000000'
@@ -135,13 +147,13 @@ Exports every custom detection rule from the specified tenant.
 Exports only Rule One and Rule Two using a comma-delimited value.
 
 .EXAMPLE
-.\Get-CustomDetections.ps1 -TenantId '00000000-0000-0000-0000-000000000000' -DetectionNames 'Rule One','Rule Two' -SelectEdgeProfile -EdgeProfileDirectory 'Profile 2'
+.\Get-CustomDetections.ps1 -TenantId '00000000-0000-0000-0000-000000000000' -DetectionNames 'Rule One','Rule Two' -ReuseCachedProfile -SelectEdgeProfile -EdgeProfileDirectory 'Profile 2'
 
 Exports two selected rules after importing Profile 2 into the isolated Edge
 profile.
 
 .EXAMPLE
-.\Get-CustomDetections.ps1 -TenantId '00000000-0000-0000-0000-000000000000' -SelectEdgeProfile -RemoveCachedProfile
+.\Get-CustomDetections.ps1 -TenantId '00000000-0000-0000-0000-000000000000' -ReuseCachedProfile -SelectEdgeProfile -RemoveCachedProfile
 
 Exports the rules, closes Edge, and removes the isolated profile and its
 authentication artifacts.
@@ -211,7 +223,8 @@ SentinelRuleNames are optional name filters and are omitted from these
 examples. No subscription discovery, account change, authentication request
 or query execution is added by these lookup instructions.
 
-Account targeting changes apply only when UserPrincipalName is supplied.
+Ordinary runs prompt for UserPrincipalName when omitted and use a fresh
+profile. ReuseCachedProfile explicitly restores legacy cached identity use.
 Only main frame Microsoft authorization requests are changed. Their existing
 client, redirect, tenant, state, nonce, scopes, and PKCE parameters are retained.
 No passwords or authentication tokens are requested on the command line.
@@ -269,7 +282,9 @@ param(
     [switch]$ResetProfile,
 
     [ValidatePattern('^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$')]
-    [string]$SentinelApiVersion
+    [string]$SentinelApiVersion,
+
+    [switch]$ReuseCachedProfile
 )
 
 Set-StrictMode -Version 2.0
@@ -286,8 +301,14 @@ function Assert-SentinelApiVersion {
 }
 if ($SentinelApiVersion) { Assert-SentinelApiVersion -Version $SentinelApiVersion }
 
-if ($UserPrincipalName -and ($SelectEdgeProfile -or $EdgeProfileDirectory -or $ResetProfile)) {
-    throw 'With UserPrincipalName, omit SelectEdgeProfile, EdgeProfileDirectory, and ResetProfile. Account selection uses a new isolated profile.'
+if ($UserPrincipalName -and ($ReuseCachedProfile -or $SelectEdgeProfile -or $EdgeProfileDirectory -or $ResetProfile)) {
+    throw 'With UserPrincipalName, omit ReuseCachedProfile, SelectEdgeProfile, EdgeProfileDirectory, and ResetProfile. Account selection uses a new isolated profile.'
+}
+if (($SelectEdgeProfile -or $EdgeProfileDirectory -or $ResetProfile) -and -not $ReuseCachedProfile) {
+    throw 'SelectEdgeProfile, EdgeProfileDirectory, and ResetProfile require explicit ReuseCachedProfile consent to cached identity use.'
+}
+if ($EdgeProfileDirectory -and -not $SelectEdgeProfile) {
+    throw 'EdgeProfileDirectory requires SelectEdgeProfile.'
 }
 if ($ExportMode -ne 'MDE' -and (
     $SubscriptionId -eq [Guid]::Empty -or
@@ -302,16 +323,26 @@ if ($ExportMode -eq 'MDE' -and $SentinelRuleNames) {
     throw 'SentinelRuleNames requires Sentinel or Both.'
 }
 
+if (-not $ReuseCachedProfile -and -not $UserPrincipalName) {
+    $UserPrincipalName = (Read-Host 'Enter the intended portal account email, or CANCEL').Trim()
+    if ($UserPrincipalName -notmatch '^[^@\s]+@[^@\s]+$') {
+        throw 'A valid intended account email is required. No browser was started or export performed.'
+    }
+}
+if ($ReuseCachedProfile) {
+    Write-Warning 'Cached profile use was explicitly selected. Account targeting and account confirmation are disabled. Verify the intended account inside each portal.'
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $PSScriptRoot ('exports\{0:yyyyMMdd-HHmmss}-{1}' -f
         (Get-Date), [Guid]::NewGuid().ToString('N').Substring(0, 8))
 }
 if ([string]::IsNullOrWhiteSpace($ProfilePath)) {
-    $profileDirectory = if ($UserPrincipalName) {
-        'Get-CustomDetections\TargetUser-' + [Guid]::NewGuid().ToString('N')
+    $profileDirectory = if ($ReuseCachedProfile) {
+        'Get-CustomDetections\EdgeProfile'
     }
     else {
-        'Get-CustomDetections\EdgeProfile'
+        'Get-CustomDetections\TargetUser-' + [Guid]::NewGuid().ToString('N')
     }
     $ProfilePath = Join-Path $env:LOCALAPPDATA $profileDirectory
 }
@@ -2266,6 +2297,7 @@ function Get-ResponseBody {
 }
 
 $edgeProcess = $null
+$ownsFreshProfile = $false
 $client = $null
 $requests = @{}
 $responses = @{}
@@ -2301,8 +2333,13 @@ try {
                 -ProfileDirectory $EdgeProfileDirectory
         }
     }
-    else {
+    elseif ($ReuseCachedProfile) {
         New-Item -ItemType Directory -Path $browserUserDataPath -Force | Out-Null
+    }
+    else {
+        # Refuse a directory created after preflight rather than reuse its identity.
+        New-Item -ItemType Directory -Path $browserUserDataPath | Out-Null
+        $ownsFreshProfile = $true
     }
 
     if ($ExportMode -ne 'Sentinel') {
@@ -2792,7 +2829,8 @@ finally {
         Stop-Process -Id $edgeProcess.Id
     }
 
-    if ($RemoveCachedProfile -and (Test-Path -LiteralPath $ProfilePath)) {
+    if ($RemoveCachedProfile -and ($ReuseCachedProfile -or $ownsFreshProfile) -and
+        (Test-Path -LiteralPath $ProfilePath)) {
         $profileRemovalDeadline = (Get-Date).AddSeconds(15)
         do {
             try {

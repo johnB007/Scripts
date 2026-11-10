@@ -1,8 +1,8 @@
 # AVD Defender and Sentinel exporter
 
 [The exporter](Get-CustomDetections.ps1) is the working AVD copy of
-Jesse Esquivel's Defender custom detection exporter, with optional account
-selection for shared Windows sessions. It now also exports existing Microsoft
+Jesse Esquivel's Defender custom detection exporter, with account
+selection enabled by default for shared Windows sessions. It now also exports existing Microsoft
 Sentinel analytics rules through the Azure portal in Microsoft Edge.
 
 Source: [johnB007/MDATP account selection contribution](https://github.com/johnB007/MDATP/blob/ecf576fbc332223e829bd01a58c127e1171f5aa0/Scripts/Custom%20Detections/Get-CustomDetections/Get-CustomDetections.ps1).
@@ -27,10 +27,21 @@ pwsh -NoProfile -File .\Get-CustomDetections.ps1 -TenantId '<tenant-guid>' -User
 3. Enter the account email displayed there when PowerShell requests confirmation.
    Enter `CANCEL` if the account is incorrect.
 
-The username is supplied at runtime, not hard coded. This mode creates a fresh
-isolated Edge profile. Do not combine it with `-SelectEdgeProfile`,
-`-EdgeProfileDirectory`, or `-ResetProfile`. The script cannot override
-organizational authentication policy. Account confirmation is manual.
+The username is supplied at runtime, not hard coded. If `-UserPrincipalName`
+is omitted, ordinary runs prompt for the intended account before starting Edge.
+Enter `CANCEL` to stop without starting a browser or creating an export.
+Every ordinary run creates a fresh isolated Edge profile. An explicit
+`-ProfilePath` must also be a new directory. Existing profiles are not deleted.
+Do not combine account targeting with `-ReuseCachedProfile`,
+`-SelectEdgeProfile`, `-EdgeProfileDirectory`, or `-ResetProfile`.
+
+A fresh profile prevents reuse of the exporter's cached browser identity. It
+does not disable Windows broker SSO, force an account chooser, prove the
+requested identity, or override organizational authentication policy.
+The existing login hint and interactive authorization request remain in use.
+Account confirmation is manual. Check the email in each portal and enter
+`CANCEL` on any mismatch.
+This uses normal Edge, not InPrivate, and retains the original launch flags.
 
 ## Combined export
 
@@ -57,10 +68,28 @@ accept PowerShell string arrays. Matching ignores case. A Sentinel rule without
 a display name is matched by resource name. Missing names make the export
 incomplete.
 
-Existing `-SelectEdgeProfile`, `-EdgeProfileDirectory`, `-ResetProfile` and
-`-RemoveCachedProfile` behavior remains available. With `-UserPrincipalName`,
-confirm the displayed account separately inside each portal. The login hint
-does not bypass organizational policy or verify the account automatically.
+Confirm the displayed account separately inside each selected portal before
+its rules are exported. `-RemoveCachedProfile` remains optional and deletes
+only the selected isolated profile after the run.
+
+### Explicit cached identity opt in
+
+Use `-ReuseCachedProfile` only when intentionally accepting a cached account
+without login targeting or account confirmation. This switch cannot be combined
+with `-UserPrincipalName`. Without `-ProfilePath` it selects the legacy
+`%LOCALAPPDATA%\Get-CustomDetections\EdgeProfile` directory. With an explicit
+path it permits reuse of that isolated directory. The script prints a warning.
+Verify the account inside each portal yourself before choosing this mode.
+
+Existing import and reset options remain available but now also require
+`-ReuseCachedProfile`. `-EdgeProfileDirectory` requires `-SelectEdgeProfile`.
+No existing profile is copied, reset, or deleted by the new default.
+
+The original account selection contribution at commit
+`ecf576fbc332223e829bd01a58c127e1171f5aa0`, copied unchanged in Scripts commit
+`7825bf70fed9737876726d78d07837095ce7ca8a`, made targeting optional.
+Omitting the account selected the persistent profile and skipped confirmation.
+The current fix changes that default route, not the proven portal algorithms.
 
 ## Find the workspace switch values
 
@@ -192,6 +221,13 @@ Both sources must belong to the specified tenant in the selected cloud.
 Government API version availability is not assumed to match Commercial.
 Government browser contexts currently allow only the Government portal origin.
 No Government ReactBlade origin has been verified or added.
+
+IL5 starts Edge at `about:blank`, then navigates Defender to
+`https://security.apps.mil/v2/custom_detection?tid=<tenant-guid>`.
+`login.microsoftonline.us` is an allowed Government authorization host.
+For Both, `portal.azure.us` opens later for Sentinel. A `.us` address alone
+does not identify the wrong cloud or account. Record the exact hostname and
+stage when troubleshooting. No live IL5 success is claimed by local tests.
 
 ### Government API version selection
 
@@ -431,9 +467,11 @@ proxy settings or close unrelated Edge windows. Endpoint absence observed
 after script termination does not establish that Edge never started, because
 startup failure cleanup can stop the launched process.
 
-The default profile is `%LOCALAPPDATA%\Get-CustomDetections\EdgeProfile`,
-independent of the script's working directory. Paths with spaces are quoted
-in the Edge launch arguments.
+The default profile is a unique
+`%LOCALAPPDATA%\Get-CustomDetections\TargetUser-<random-id>` directory,
+independent of the script's working directory. Only explicit
+`-ReuseCachedProfile` restores the legacy `EdgeProfile` default. Paths with
+spaces are quoted in the Edge launch arguments.
 
 The script closes its Edge window when it completes or fails. There is no
 keep open flag. Increasing `-LoginTimeoutSeconds` gives more time to sign in

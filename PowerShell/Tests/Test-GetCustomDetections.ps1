@@ -111,15 +111,15 @@ Resources
     }
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
-        # Executable AST fingerprints from published startup fix c44d0aa2.
-        # Documentation changes must not alter parameters or runtime statements.
+        # Account isolation regression baseline. The live verified core below
+        # remains independently pinned to its original fingerprints.
         foreach ($part in @(
-            @{ name = 'ParamBlock'; hash = 'F8AB3F5AB15EE2FEF90A3484702829EE67624406A0685E6E8B14EA3DAB48B327' },
-            @{ name = 'EndBlock'; hash = 'B3F1A67C85B08D3D818A8DD452F231D99F5E62D51B356FE6D952FDE4687AA95D' }
+            @{ name = 'ParamBlock'; hash = 'F70F842550111AD5C096C4D01DF6DD1EF052A2A8C912F815B43D206FC4252B70' },
+            @{ name = 'EndBlock'; hash = 'EFF6183DCB30EC9D5FF6F998E162032732F1885D6CB9270B3D215CDD3A63C07F' }
         )) {
             $normalized = $ast.($part.name).Extent.Text.Replace("`r`n", "`n")
             $actual = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($normalized))).Replace('-', '')
-            Assert-True ($actual -ceq $part.hash) "Published startup fix executable $($part.name) preserved"
+            Assert-True ($actual -ceq $part.hash) "Account isolation executable $($part.name) baseline"
         }
         foreach ($name in $commercialCore.Keys) {
             $definition = $ast.Find({param($node)
@@ -137,7 +137,8 @@ Resources
     $parameterNames = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
     Assert-True (($parameterNames[0..16] -join ',') -ceq
         'TenantId,UserPrincipalName,DetectionNames,ExportMode,CloudEnvironment,SubscriptionId,ResourceGroupName,WorkspaceName,SentinelRuleNames,OutputPath,ProfilePath,SelectEdgeProfile,EdgeProfileDirectory,LoginTimeoutSeconds,CaptureSeconds,RemoveCachedProfile,ResetProfile' -and
-        $parameterNames[17] -ceq 'SentinelApiVersion') 'Original positional parameter order retained with version option appended'
+        $parameterNames[17] -ceq 'SentinelApiVersion' -and
+        $parameterNames[18] -ceq 'ReuseCachedProfile') 'Original positional parameter order retained with new options appended'
     $commercialCopy = $source.Remove($cloudDefault.StartOffset,
         $cloudDefault.EndOffset - $cloudDefault.StartOffset).Insert($cloudDefault.StartOffset, "'Commercial'")
     $copyErrors = $null; $copyTokens = $null
@@ -187,12 +188,103 @@ Resources
         $renderedHelp = Get-Help -Name $editionPath -Full | Out-String -Width 4096
         Assert-True ($renderedHelp.Contains('| order by WorkspaceName asc') -and
             $renderedHelp.Contains('Azure Resource Graph Explorer')) "Actual Get Help Full renders $label lookup instructions without executing exporter"
+        Assert-True ($renderedHelp.Contains('ReuseCachedProfile') -and
+            $renderedHelp.Contains('Windows broker SSO') -and
+            $renderedHelp.Contains('prompts for the intended account')) "Actual $label help documents safe default, explicit reuse, and broker limitation"
         $exampleCommand = ".\Get-CustomDetections_Analytics-$label.ps1 -ExportMode Both"
         $exampleLines = @($editionSource -split '\r?\n' | Where-Object { $_.StartsWith($exampleCommand) })
         Assert-True ($exampleLines.Count -eq 1 -and -not $exampleLines[0].Contains('`') -and
             $exampleLines[0].Contains("-WorkspaceName '<workspace name>'") -and
             $documentation.Contains($exampleLines[0])) "Standalone $label invocation is one line with matching shared instructions"
     }
+    # Execute actual preflight statements without compiling the socket or starting
+    # the entrypoint. All paths and account inputs are synthetic.
+    $preflight = $source.Substring($source.IndexOf('if ($SentinelApiVersion)'),
+        $source.IndexOf('$cdpClientSource =') - $source.IndexOf('if ($SentinelApiVersion)'))
+    $preflight = $preflight.Replace('$PSScriptRoot',
+        "'" + (Split-Path $scriptPath -Parent).Replace("'", "''") + "'")
+    $syntheticLocalAppData = Join-Path $tempRoot 'localappdata'
+    $preflight = $preflight.Replace('$env:LOCALAPPDATA',
+        "'" + $syntheticLocalAppData.Replace("'", "''") + "'")
+    $script:accountReplies = New-Object System.Collections.Generic.Queue[string]
+    $script:accountPrompts = New-Object System.Collections.Generic.List[string]
+    function Read-Host {
+        param([string]$Prompt)
+        $script:accountPrompts.Add($Prompt)
+        if ($script:accountReplies.Count -eq 0) { throw 'Unexpected offline account prompt.' }
+        $script:accountReplies.Dequeue()
+    }
+    function Invoke-TestAccountPreflight {
+        param([string]$Account = '', [string]$Profile = '', [switch]$Reuse,
+            [switch]$Import, [switch]$Reset, [string]$Directory = '',
+            [string]$Cloud = 'USGovDoD', [string]$Mode = 'Both')
+        $UserPrincipalName = $Account; $ProfilePath = $Profile; $ReuseCachedProfile = $Reuse
+        $SelectEdgeProfile = $Import; $ResetProfile = $Reset; $EdgeProfileDirectory = $Directory
+        $TenantId = $tenant; $SubscriptionId = $subscription
+        $ResourceGroupName = 'Test-RG'; $WorkspaceName = 'Test-Workspace'
+        $ExportMode = $Mode; $CloudEnvironment = $Cloud; $SentinelApiVersion = ''
+        $DetectionNames = @(); $SentinelRuleNames = @(); $OutputPath = Join-Path $tempRoot 'preflight-output'
+        $PSScriptRoot = Split-Path $scriptPath -Parent
+        Invoke-Expression $preflight
+        [pscustomobject]@{ Account = $UserPrincipalName; Profile = $ProfilePath; Portal = $portalUrl }
+    }
+    $cachedFixture = Join-Path $syntheticLocalAppData 'Get-CustomDetections\EdgeProfile'
+    New-Item -ItemType Directory -Path $cachedFixture -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $cachedFixture 'synthetic-identity.txt'), 'wrong@example.invalid')
+    $script:freshAccounts = @{}
+    foreach ($cloud in @('Commercial', 'USGovDoD')) {
+        foreach ($mode in @('MDE', 'Sentinel', 'Both')) {
+            $script:accountReplies.Enqueue('intended@example.invalid')
+            $before = $script:accountPrompts.Count
+            $selected = Invoke-TestAccountPreflight -Cloud $cloud -Mode $mode
+            Assert-True ($selected.Account -ceq 'intended@example.invalid' -and
+                $script:accountPrompts.Count -eq ($before + 1)) "Ordinary $cloud $mode requests intended account"
+            Assert-True ($selected.Profile -like '*\Get-CustomDetections\TargetUser-*' -and
+                -not (Test-Path -LiteralPath $selected.Profile)) "Ordinary $cloud $mode selects a new profile without creating it"
+            $expectedHost = if ($cloud -eq 'Commercial') { 'security.microsoft.com' } else { 'security.apps.mil' }
+            Assert-True (([Uri]$selected.Portal).Host -ceq $expectedHost -and
+                $selected.Portal -ceq "https://$expectedHost/v2/custom_detection?tid=$tenant") "Ordinary $cloud $mode retains exact initial Defender destination"
+            $script:freshAccounts["fresh${cloud}${mode}"] = $selected
+        }
+    }
+    Assert-True (@($script:freshAccounts.Values.Profile | Select-Object -Unique).Count -eq 6) 'Each ordinary invocation gets a distinct profile'
+    $before = $script:accountPrompts.Count
+    $selected = Invoke-TestAccountPreflight -Account 'intended@example.invalid'
+    Assert-True ($selected.Account -ceq 'intended@example.invalid' -and
+        $script:accountPrompts.Count -eq $before) 'Explicit intended account skips only initial prompt'
+    foreach ($reply in @('CANCEL', '', 'not-an-email')) {
+        $script:accountReplies.Enqueue($reply)
+        Assert-Throws { Invoke-TestAccountPreflight } 'Cancellation or invalid account fails before browser or output initialization'
+    }
+    Assert-Throws { Invoke-TestAccountPreflight -Account 'intended@example.invalid' -Profile $cachedFixture } 'Explicit existing profile refused in safe account mode'
+    $script:accountReplies.Enqueue('intended@example.invalid')
+    Assert-Throws { Invoke-TestAccountPreflight -Profile $cachedFixture } 'Existing profile cannot silently bypass default account selection'
+    foreach ($flags in @(@{ Reuse = $true }, @{ Import = $true }, @{ Reset = $true }, @{ Directory = 'Default' })) {
+        Assert-Throws { Invoke-TestAccountPreflight -Account 'intended@example.invalid' @flags } 'Account targeting rejects cached identity switches'
+    }
+    foreach ($flags in @(@{ Import = $true }, @{ Reset = $true }, @{ Directory = 'Default' })) {
+        Assert-Throws { Invoke-TestAccountPreflight @flags } 'Cached identity switches require explicit reuse consent'
+    }
+    Assert-Throws { Invoke-TestAccountPreflight -Reuse -Directory 'Default' } 'Profile directory without import rejected'
+    $before = $script:accountPrompts.Count
+    $selected = Invoke-TestAccountPreflight -Reuse -Profile $cachedFixture
+    Assert-True ($selected.Profile -ceq $cachedFixture -and -not $selected.Account -and
+        $script:accountPrompts.Count -eq $before) 'Explicit cached profile opt in preserves legacy behavior without prompting'
+    $legacy = Invoke-TestAccountPreflight -Reuse
+    Assert-True ($legacy.Profile -ceq $cachedFixture) 'Explicit reuse without a path retains legacy cache location'
+    $selected = Invoke-TestAccountPreflight -Reuse -Import -Directory 'Default' -Reset
+    Assert-True (-not $selected.Account) 'Explicit reuse permits legacy import and reset parameters without executing them'
+    Assert-True (([IO.File]::ReadAllText((Join-Path $cachedFixture 'synthetic-identity.txt'))) -ceq
+        'wrong@example.invalid') 'Preflight leaves existing cached identity fixture untouched'
+    Assert-True (-not (Test-Path (Join-Path $tempRoot 'preflight-output'))) 'Preflight does not create exports'
+    foreach ($reply in @('wrong@example.invalid', 'CANCEL')) {
+        $script:accountReplies.Enqueue($reply)
+        Assert-Throws { Confirm-TargetUser 'intended@example.invalid' } 'Defender confirmation mismatch cancels export'
+    }
+    $script:accountReplies.Enqueue('INTENDED@example.invalid')
+    Confirm-TargetUser 'intended@example.invalid'
+    Assert-True ($script:accountReplies.Count -eq 0) 'Defender account confirmation accepts matching email ignoring case'
+
     foreach ($fixture in @(
         @{ text = 'Cannot find context with specified id'; reason = 'ContextUnavailable'; code = -32000 },
         @{ text = 'Promise was collected'; reason = 'PromiseCollected'; code = -32000 },
@@ -429,7 +521,12 @@ Resources
         Replace('$PSScriptRoot', "'" + (Split-Path $scriptPath -Parent).Replace("'", "''") + "'")
     function Resolve-EdgeExecutable { 'offline-msedge.exe' }
     function Get-AvailableTcpPort { 12345 }
+    $script:launchCount = 0
     function Start-Process { param($FilePath, $ArgumentList, [switch]$PassThru)
+        $script:launchCount++
+        Assert-True (($ArgumentList -join ' ') -notmatch '(?i)inprivate|incognito|https://' -and
+            'about:blank' -in $ArgumentList -and
+            @($ArgumentList | Where-Object { $_ -like '--user-data-dir=*' }).Count -eq 1) 'Normal isolated Edge launch retains about blank with no private browsing or initial portal URL'
         [pscustomobject]@{ Id = -1; HasExited = $true; ExitCode = 0 }
     }
     function Invoke-RestMethod { [CmdletBinding()]param($Uri, $TimeoutSec)
@@ -487,12 +584,14 @@ Resources
         [pscustomobject]@{ url = $portalUrl; readyState = 'complete' }
     }
     function Add-NetworkEvents { param($Client, $Requests, $Responses, $AuthenticationState)
+        if ($AuthenticationState) { $AuthenticationState.AuthorizationRequests++ }
         $Requests['offline'] = [pscustomobject]@{
             url = "https://$defenderHost/apiproxy/hunting/huntingService/rules/unified"
             method = 'GET'; headers = [pscustomobject]@{ Accept = 'application/json' }
         }
     }
     function Invoke-CdpCommand { param($Client, $Method, $Parameters, $TimeoutMilliseconds, $SessionId)
+        if ($Method -eq 'Network.disable') { $script:sentinelPhase = $true }
         $script:commandOrder.Add([pscustomobject]@{
             Method = $Method; SessionId = [string]$SessionId
             Expression = if ($Parameters -and $Parameters.ContainsKey('expression')) { [string]$Parameters.expression } else { '' }
@@ -521,7 +620,7 @@ Resources
             } elseif ($SessionId -eq 'react-session') {
                 [pscustomobject]@{ id = 'blade'; url = 'https://sandbox-1.reactblade.portal.azure.net/browse' }
             } else {
-                [pscustomobject]@{ id = 'root'; url = $sentinelTarget.PortalUrl }
+                [pscustomobject]@{ id = 'root'; url = $(if ($script:sentinelPhase) { $sentinelTarget.PortalUrl } else { $portalUrl }) }
             }
             return [pscustomobject]@{ frameTree = [pscustomobject]@{ frame = $frame } }
         }
@@ -617,7 +716,21 @@ Resources
         }
         [pscustomobject]@{}
     }
-    $failureScenarios = @('mdeFailure', 'sentinelFailure', 'malformedReadiness', 'malformedListReply', 'invalidJson', 'captureCollision',
+    # Simulate another writer creating the requested directory after preflight.
+    # A failed fresh creation must neither launch Edge nor delete that directory.
+    & {
+        $ExportMode = 'Sentinel'; $OutputPath = Join-Path $tempRoot 'profile-collision-output'
+        $ProfilePath = $cachedFixture; $ResetProfile = $false; $SelectEdgeProfile = $false
+        $ReuseCachedProfile = $false; $RemoveCachedProfile = $true
+        $collision = $null
+        try { Invoke-Expression $entrypoint } catch { $collision = $_ }
+        Assert-True ($null -ne $collision -and
+            $collision.FullyQualifiedErrorId -match 'DirectoryExist') 'Fresh profile creation refuses a late existing directory'
+    }
+    Assert-True ($script:launchCount -eq 0 -and
+        [IO.File]::ReadAllText((Join-Path $cachedFixture 'synthetic-identity.txt')) -ceq
+        'wrong@example.invalid') 'Late profile collision preserves existing identity even with cleanup requested'
+    $failureScenarios = @('mdeFailure', 'sentinelFailure', 'targetedMdeMismatch', 'targetedSentinelMismatch', 'malformedReadiness', 'malformedListReply', 'invalidJson', 'captureCollision',
         'protocolFailure', 'malformedSerializedReply', 'browserExecutionFailure', 'http401',
         'sessionNavigationClosed', 'sessionNavigationForeign', 'sessionNavigationDifferentTarget', 'sessionNavigationRepeated',
         'governmentDiscovery403')
@@ -627,8 +740,12 @@ Resources
         'protocolFailure', 'malformedSerializedReply', 'browserExecutionFailure', 'http401',
         'sessionNavigationRoot', 'sessionNavigationIframe', 'sessionNavigationClosed',
         'sessionNavigationForeign', 'sessionNavigationDifferentTarget', 'sessionNavigationRepeated',
-        'governmentDiscovery', 'governmentDiscovery403', 'governmentDiscoveryContextLoss', 'commercialBoth')) {
+        'governmentDiscovery', 'governmentDiscovery403', 'governmentDiscoveryContextLoss', 'commercialBoth',
+        'freshCommercialMDE', 'freshCommercialSentinel', 'freshCommercialBoth',
+        'freshUSGovDoDMDE', 'freshUSGovDoDSentinel', 'freshUSGovDoDBoth',
+        'targetedMdeMismatch', 'targetedSentinelMismatch')) {
         $script:entryScenario = $scenario
+        $script:sentinelPhase = $false
         $script:portalPollCount = 0
         $script:listAttemptCount = 0
         $script:frameEventsSent = $false
@@ -638,21 +755,38 @@ Resources
         $script:listSessions = New-Object System.Collections.Generic.List[string]
         $script:evaluatedSessions = New-Object System.Collections.Generic.List[string]
         $script:commandOrder = New-Object System.Collections.Generic.List[object]
-        $mode = if ($scenario -in @('mdeFailure', 'sentinelFailure', 'commercialBoth')) { 'Both' }
+        $mode = if ($scenario -like 'fresh*') { $scenario -replace '^fresh(Commercial|USGovDoD)', '' }
+            elseif ($scenario -in @('mdeFailure', 'sentinelFailure', 'commercialBoth', 'targetedMdeMismatch', 'targetedSentinelMismatch')) { 'Both' }
             elseif ($scenario -in @('MDE', 'Sentinel', 'Both')) { $scenario } else { 'Sentinel' }
         $script:entryThrew = $false
         & {
             $ExportMode = $mode
-            $CloudEnvironment = if ($scenario -in @('iframeReady', 'rogueIframe', 'sessionNavigationIframe', 'commercialBoth')) { 'Commercial' } else { 'USGovDoD' }
+            $CloudEnvironment = if ($scenario -like 'freshCommercial*' -or
+                $scenario -in @('iframeReady', 'rogueIframe', 'sessionNavigationIframe', 'commercialBoth')) { 'Commercial' } else { 'USGovDoD' }
             $TenantId = $tenant
             $SubscriptionId = $subscription; $ResourceGroupName = 'Test-RG'; $WorkspaceName = 'Test-Workspace'
             $OutputPath = Join-Path $tempRoot "entry$scenario"; $ProfilePath = Join-Path $tempRoot "edge$scenario"
             $PSCommandPath = $scriptPath; $PSScriptRoot = Split-Path $scriptPath -Parent
             $UserPrincipalName = ''; $SelectEdgeProfile = $false; $EdgeProfileDirectory = ''
+            $ReuseCachedProfile = $true
+            if ($scenario -like 'fresh*' -or $scenario -like 'targeted*') {
+                $ReuseCachedProfile = $false
+                $UserPrincipalName = 'intended@example.invalid'
+                if ($scenario -like 'fresh*') {
+                    $ProfilePath = $script:freshAccounts[$scenario].Profile
+                    $UserPrincipalName = $script:freshAccounts[$scenario].Account
+                }
+                if ($mode -ne 'Sentinel') {
+                    $script:accountReplies.Enqueue($(if ($scenario -eq 'targetedMdeMismatch') { 'wrong@example.invalid' } else { $UserPrincipalName }))
+                }
+                if ($mode -ne 'MDE') {
+                    $script:accountReplies.Enqueue($(if ($scenario -eq 'targetedSentinelMismatch') { 'wrong@example.invalid' } else { $UserPrincipalName }))
+                }
+            }
             $SentinelApiVersion = if ($scenario -like 'governmentDiscovery*' -or $CloudEnvironment -eq 'Commercial') { '' } else { '2025-09-01' }
             $ResetProfile = $false; $RemoveCachedProfile = $true; $DetectionNames = @(); $SentinelRuleNames = @()
             $LoginTimeoutSeconds = 30; $CaptureSeconds = 5
-            $defenderHost = 'security.apps.mil'
+            $defenderHost = if ($CloudEnvironment -eq 'Commercial') { 'security.microsoft.com' } else { 'security.apps.mil' }
             $portalUrl = "https://$defenderHost/v2/custom_detection?tid=$tenant"
             try { Invoke-Expression $entrypoint } catch {
                 if ($scenario -notin $failureScenarios) { throw }
@@ -662,13 +796,21 @@ Resources
         $manifest = Get-Content (Join-Path $tempRoot "entry$scenario\manifest.json") -Raw | ConvertFrom-Json
         if ($scenario -in $failureScenarios) {
             Assert-True (-not $manifest.complete -and $script:entryThrew) 'Combined failure is not success'
-            if ($scenario -eq 'mdeFailure') {
+            if ($scenario -in @('mdeFailure', 'targetedMdeMismatch')) {
                 Assert-True ($manifest.Sentinel.complete -and -not $manifest.MDE.complete) 'Sentinel continues after MDE failure'
-            } elseif ($scenario -eq 'sentinelFailure') {
+                if ($scenario -eq 'targetedMdeMismatch') {
+                    Assert-True (-not (Test-Path (Join-Path $tempRoot "entry$scenario\MDE\rules\MDE rule.json"))) 'Wrong Defender account saves no rule'
+                }
+            } elseif ($scenario -in @('sentinelFailure', 'targetedSentinelMismatch')) {
                 Assert-True ($manifest.MDE.complete -and -not $manifest.Sentinel.complete) 'MDE success retained after Sentinel failure'
                 $sentinelManifest = Get-Content (Join-Path $tempRoot "entry$scenario\Sentinel\manifest.json") -Raw | ConvertFrom-Json
-                Assert-True ($sentinelManifest.failureDetails[0].browserStatus -eq 'httpError' -and
-                    $sentinelManifest.failureDetails[0].httpStatus -eq 403) 'Exact safe browser status and HTTP code preserved'
+                if ($scenario -eq 'targetedSentinelMismatch') {
+                    Assert-True ($sentinelManifest.failureDetails[0].stage -eq 'ConfirmPortalAccount' -and
+                        $script:listAttemptCount -eq 0) 'Wrong Azure account stops before Sentinel collection request'
+                } else {
+                    Assert-True ($sentinelManifest.failureDetails[0].browserStatus -eq 'httpError' -and
+                        $sentinelManifest.failureDetails[0].httpStatus -eq 403) 'Exact safe browser status and HTTP code preserved'
+                }
             } else {
                 $expectedStage = switch ($scenario) {
                     'malformedReadiness' { 'WaitForPortalAuthentication' }
@@ -793,6 +935,26 @@ Resources
             }
             Assert-True ($rootPreload -ge 0 -and $portalNavigation -gt $rootPreload) 'Root startup observer registered before Azure portal navigation'
             Assert-True ($pausedAttach -ge 0 -and $portalNavigation -gt $pausedAttach) 'Iframe pause on startup enabled before Azure portal navigation'
+        }
+        if ($scenario -like 'fresh*') {
+            Assert-True (-not (Test-Path $script:freshAccounts[$scenario].Profile) -and
+                $script:accountReplies.Count -eq 0) 'Ordinary account mode confirms each selected portal and cleans only its new profile'
+            Assert-True (@($script:commandOrder | Where-Object { $_.Method -eq 'Fetch.enable' }).Count -eq
+                $(if ($mode -eq 'Both') { 2 } else { 1 })) 'Ordinary mode enables existing account targeting for each selected source'
+            $navigations = @($script:commandOrder | Where-Object {
+                $_.Method -eq 'Runtime.evaluate' -and $_.Expression -match '^setTimeout.*location.assign'
+            } | ForEach-Object { $_.Expression })
+            $defenderDestination = if ($scenario -like 'freshCommercial*') { 'security.microsoft.com' } else { 'security.apps.mil' }
+            $azureDestination = if ($scenario -like 'freshCommercial*') { 'portal.azure.com' } else { 'portal.azure.us' }
+            $firstHost = if ($mode -eq 'Sentinel') { $azureDestination } else { $defenderDestination }
+            Assert-True ($navigations.Count -eq $(if ($mode -eq 'Both') { 2 } else { 1 }) -and
+                $navigations[0].Contains("https://$firstHost/")) 'First portal navigation matches selected source and cloud'
+            if ($mode -eq 'Both') {
+                Assert-True ($navigations[1].Contains("https://$azureDestination/")) 'Combined export opens selected Azure portal only after Defender'
+            }
+            if ($scenario -like 'freshUSGovDoD*') {
+                Assert-True (-not (($navigations -join ' ') -match 'security\.microsoft\.(com|us)|portal\.azure\.com')) 'IL5 portal destinations never use Commercial or USGov Defender'
+            }
         }
         Assert-True (-not (Test-Path (Join-Path $tempRoot "edge$scenario"))) 'Owned profile cleanup'
     }
